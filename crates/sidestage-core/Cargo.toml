@@ -1,0 +1,15 @@
+[package]
+name = "sidestage-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent model, persistence and window grouping for Sidestage"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

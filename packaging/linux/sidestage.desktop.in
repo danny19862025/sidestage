@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Sidestage
+GenericName=App & window sidebar
+Comment=Favourite apps and minimized windows in one edge sidebar
+Exec=@BIN@
+Icon=sidestage
+Terminal=false
+Categories=Utility;
+Keywords=dock;sidebar;launcher;windows;minimized;stage;
+StartupNotify=false
+StartupWMClass=sidestage
+# KWin: allow window previews through ScreenShot2 and the window list
+# protocol even where KWin restricts them to known applications.
+X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2
+X-KDE-Wayland-Interfaces=org_kde_plasma_window_management,zwlr_layer_shell_v1

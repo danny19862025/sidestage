@@ -1,0 +1,8 @@
+{
+  "uuid": "sidestage@sidestage.app",
+  "name": "Sidestage integration",
+  "description": "Lets the Sidestage sidebar list, preview and restore minimized windows on GNOME, reserves screen space for it, and adds a Sidestage panel menu.\n\nRequires the Sidestage app.",
+  "shell-version": ["47", "48", "49", "50", "51"],
+  "url": "https://github.com/danny19862025/sidestage",
+  "version": 1
+}

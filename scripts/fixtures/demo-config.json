@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "settings": { "edge": "left", "width": 236, "preview_height": 118, "icon_size": 40, "theme": "dark" },
+  "sections": [
+    { "id": "sec-games", "name": "Games", "expanded": true, "items": [] },
+    { "id": "sec-coding", "name": "Coding", "expanded": true, "items": [
+      { "id": "fav-code", "name": "VS Code", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/com.microsoft.VSCode.desktop" } },
+      { "id": "fav-editor", "name": "Text Editor", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/org.gnome.TextEditor.desktop" } }
+    ]},
+    { "id": "sec-work", "name": "Work", "expanded": true, "items": [
+      { "id": "fav-writer", "name": "Writer", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/libreoffice-writer.desktop" } },
+      { "id": "fav-mail", "name": "Thunderbird", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/org.mozilla.Thunderbird.desktop" } },
+      { "id": "fav-okular", "name": "Okular", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/org.kde.okular.desktop" } }
+    ]},
+    { "id": "sec-everyday", "name": "Everyday", "expanded": true, "items": [
+      { "id": "fav-firefox", "name": "Firefox", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/firefox.desktop" } },
+      { "id": "fav-vlc", "name": "VLC", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/vlc.desktop" } },
+      { "id": "fav-settings", "name": "System Settings", "target": { "kind": "desktop_entry", "path": "/usr/share/applications/kdesystemsettings.desktop" } }
+    ]}
+  ]
+}
