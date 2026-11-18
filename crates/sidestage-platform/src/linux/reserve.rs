@@ -16,7 +16,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use anyhow::{Context, Result};
 use sidestage_core::config::Edge;
 use wayland_client::globals::{registry_queue_init, GlobalListContents};
-use wayland_client::protocol::{wl_buffer, wl_compositor, wl_output, wl_region, wl_registry, wl_shm, wl_shm_pool, wl_surface};
+use wayland_client::protocol::{
+    wl_buffer, wl_compositor, wl_output, wl_region, wl_registry, wl_shm, wl_shm_pool, wl_surface,
+};
 use wayland_client::{Connection, Dispatch, Proxy, QueueHandle};
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
@@ -41,8 +43,9 @@ impl LayerReserver {
         let conn = super::wayland_connection().context("no Wayland connection")?;
         let (globals, queue) = registry_queue_init::<State>(&conn)?;
         let qh = queue.handle();
-        let layer_shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 =
-            globals.bind(&qh, 1..=4, ()).context("compositor has no wlr-layer-shell")?;
+        let layer_shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = globals
+            .bind(&qh, 1..=4, ())
+            .context("compositor has no wlr-layer-shell")?;
         let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 4..=6, ())?;
         let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ())?;
         let mut outputs = HashMap::new();
@@ -55,13 +58,26 @@ impl LayerReserver {
         let (tx, rx) = mpsc::channel();
         let (wake_r, wake_w) = UnixStream::pair()?;
         wake_r.set_nonblocking(true)?;
-        let mut state = State { layer_shell, compositor, shm, outputs, current: None, wanted: None };
-        std::thread::Builder::new().name("layer-reserve".into()).spawn(move || {
-            if let Err(e) = run(conn, queue, &mut state, rx, wake_r) {
-                log::warn!("space reservation stopped: {e:#}");
-            }
-        })?;
-        Ok(LayerReserver { tx, wake: wake_w, last: None })
+        let mut state = State {
+            layer_shell,
+            compositor,
+            shm,
+            outputs,
+            current: None,
+            wanted: None,
+        };
+        std::thread::Builder::new()
+            .name("layer-reserve".into())
+            .spawn(move || {
+                if let Err(e) = run(conn, queue, &mut state, rx, wake_r) {
+                    log::warn!("space reservation stopped: {e:#}");
+                }
+            })?;
+        Ok(LayerReserver {
+            tx,
+            wake: wake_w,
+            last: None,
+        })
     }
 
     pub fn set(&mut self, r: Option<Reservation>) {
@@ -109,10 +125,20 @@ impl State {
         if r.size == 0 {
             return;
         }
-        let output = self.outputs.values().find(|(_, n)| *n == r.output).map(|(o, _)| o.clone());
+        let output = self
+            .outputs
+            .values()
+            .find(|(_, n)| *n == r.output)
+            .map(|(o, _)| o.clone());
         if output.is_none() {
-            log::debug!("output {:?} not found among {:?}; letting the compositor choose", r.output,
-                self.outputs.values().map(|(_, n)| n.clone()).collect::<Vec<_>>());
+            log::debug!(
+                "output {:?} not found among {:?}; letting the compositor choose",
+                r.output,
+                self.outputs
+                    .values()
+                    .map(|(_, n)| n.clone())
+                    .collect::<Vec<_>>()
+            );
         }
         let surface = self.compositor.create_surface(qh, ());
         // Empty input region: clicks fall through to whatever is below.
@@ -137,11 +163,17 @@ impl State {
         layer.set_exclusive_zone(r.size as i32);
         layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::None);
         surface.commit();
-        self.current = Some(Active { surface, layer, buffer: None });
+        self.current = Some(Active {
+            surface,
+            layer,
+            buffer: None,
+        });
     }
 
     fn attach(&mut self, qh: &QueueHandle<State>, width: u32, height: u32) {
-        let Some(active) = self.current.as_mut() else { return };
+        let Some(active) = self.current.as_mut() else {
+            return;
+        };
         let (w, h) = (width.max(1), height.max(1));
         let size = (w * h * 4) as usize;
         let fd = unsafe { libc::memfd_create(c"sidestage-reserve".as_ptr(), libc::MFD_CLOEXEC) };
@@ -154,7 +186,15 @@ impl State {
             return;
         }
         let pool = self.shm.create_pool(fd.as_fd(), size as i32, qh, ());
-        let buffer = pool.create_buffer(0, w as i32, h as i32, (w * 4) as i32, wl_shm::Format::Argb8888, qh, ());
+        let buffer = pool.create_buffer(
+            0,
+            w as i32,
+            h as i32,
+            (w * 4) as i32,
+            wl_shm::Format::Argb8888,
+            qh,
+            (),
+        );
         pool.destroy();
         active.surface.attach(Some(&buffer), 0, 0);
         active.surface.damage_buffer(0, 0, w as i32, h as i32);
@@ -177,10 +217,20 @@ fn run(
     loop {
         queue.dispatch_pending(state)?;
         conn.flush()?;
-        let Some(guard) = queue.prepare_read() else { continue };
+        let Some(guard) = queue.prepare_read() else {
+            continue;
+        };
         let mut fds = [
-            libc::pollfd { fd: guard.connection_fd().as_raw_fd(), events: libc::POLLIN, revents: 0 },
-            libc::pollfd { fd: wake.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+            libc::pollfd {
+                fd: guard.connection_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: wake.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
         ];
         if unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) } < 0 {
             if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
@@ -223,11 +273,26 @@ fn run(
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
-    fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<wl_output::WlOutput, u32> for State {
-    fn event(state: &mut Self, _: &wl_output::WlOutput, event: wl_output::Event, global: &u32, _: &Connection, qh: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &wl_output::WlOutput,
+        event: wl_output::Event,
+        global: &u32,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
         if let wl_output::Event::Name { name } = event {
             if let Some(entry) = state.outputs.get_mut(global) {
                 entry.1 = name;
@@ -250,7 +315,11 @@ impl Dispatch<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, ()> for State {
         qh: &QueueHandle<Self>,
     ) {
         match event {
-            zwlr_layer_surface_v1::Event::Configure { serial, width, height } => {
+            zwlr_layer_surface_v1::Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
                 layer.ack_configure(serial);
                 state.attach(qh, width, height);
             }

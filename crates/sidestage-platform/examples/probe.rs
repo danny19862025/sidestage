@@ -18,7 +18,12 @@ fn main() {
     let thumb_dir = args.get(3).cloned();
     let (tx, rx) = mpsc::channel();
     let backend = sidestage_platform::start_window_backend(tx, Arc::new(|| {}));
-    println!("backend={} thumbnails={:?} session={}", backend.name(), backend.thumbnail_mode(), sidestage_platform::session_description());
+    println!(
+        "backend={} thumbnails={:?} session={}",
+        backend.name(),
+        backend.thumbnail_mode(),
+        sidestage_platform::session_description()
+    );
     let mut tracker = WindowTracker::new();
     let end = Instant::now() + Duration::from_secs(secs);
     let mut restore_at: Option<(Instant, sidestage_core::WindowId)> = None;
@@ -30,14 +35,20 @@ fn main() {
                 restore_at = None;
             }
         }
-        let Ok(ev) = rx.recv_timeout(Duration::from_millis(100)) else { continue };
+        let Ok(ev) = rx.recv_timeout(Duration::from_millis(100)) else {
+            continue;
+        };
         match &ev {
             WindowEvent::Upsert(w) => {
-                println!("UPSERT min={} app={} ({}) title={:?} id={}", w.minimized, w.app_key, w.app_name, w.title, w.id);
+                println!(
+                    "UPSERT min={} app={} ({}) title={:?} id={}",
+                    w.minimized, w.app_key, w.app_name, w.title, w.id
+                );
                 if w.minimized {
                     if let Some(sub) = &restore_title {
                         if w.title.contains(sub.as_str()) && restore_at.is_none() {
-                            restore_at = Some((Instant::now() + Duration::from_secs(2), w.id.clone()));
+                            restore_at =
+                                Some((Instant::now() + Duration::from_secs(2), w.id.clone()));
                         }
                     }
                 }
@@ -46,19 +57,32 @@ fn main() {
             WindowEvent::Snapshot(l) => {
                 println!("SNAPSHOT {} windows", l.len());
                 for w in l {
-                    println!("  min={} app={} ({}) title={:?} id={}", w.minimized, w.app_key, w.app_name, w.title, w.id);
+                    println!(
+                        "  min={} app={} ({}) title={:?} id={}",
+                        w.minimized, w.app_key, w.app_name, w.title, w.id
+                    );
                     if let (true, Some(sub), None) = (w.minimized, &restore_title, &restore_at) {
                         if w.title.contains(sub.as_str()) {
-                            restore_at = Some((Instant::now() + Duration::from_secs(2), w.id.clone()));
+                            restore_at =
+                                Some((Instant::now() + Duration::from_secs(2), w.id.clone()));
                         }
                     }
                 }
             }
-            WindowEvent::Icon { app_key, image } => println!("ICON {app_key} {}x{}", image.width, image.height),
+            WindowEvent::Icon { app_key, image } => {
+                println!("ICON {app_key} {}x{}", image.width, image.height)
+            }
             WindowEvent::Thumbnail { id, image } => {
-                println!("THUMB {id} {:?} blank={}", image, image.as_ref().map(|i| i.is_blank()).unwrap_or(true));
+                println!(
+                    "THUMB {id} {:?} blank={}",
+                    image,
+                    image.as_ref().map(|i| i.is_blank()).unwrap_or(true)
+                );
                 if let (Some(dir), Some(img)) = (&thumb_dir, image) {
-                    let path = format!("{dir}/thumb-{}.png", id.0.trim_matches(|c| c == '{' || c == '}'));
+                    let path = format!(
+                        "{dir}/thumb-{}.png",
+                        id.0.trim_matches(|c| c == '{' || c == '}')
+                    );
                     let _ = image_save(&path, img);
                     println!("  saved {path}");
                 }
@@ -67,7 +91,12 @@ fn main() {
         }
         if tracker.apply(&ev) {
             let g = tracker.groups();
-            println!("  -> minimized groups: {:?}", g.iter().map(|g| (g.app_name.clone(), g.windows.len())).collect::<Vec<_>>());
+            println!(
+                "  -> minimized groups: {:?}",
+                g.iter()
+                    .map(|g| (g.app_name.clone(), g.windows.len()))
+                    .collect::<Vec<_>>()
+            );
         }
     }
 }
@@ -79,7 +108,11 @@ fn image_save(path: &str, img: &sidestage_core::RgbaImage) -> std::io::Result<()
         for &b in data {
             c ^= b as u32;
             for _ in 0..8 {
-                c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+                c = if c & 1 != 0 {
+                    0xEDB8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
             }
         }
         !c

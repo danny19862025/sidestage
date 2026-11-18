@@ -35,7 +35,8 @@ impl Textures {
             .spawn(move || {
                 sidestage_platform::init_worker_thread();
                 while let Ok(job) = job_rx.recv() {
-                    let img = sidestage_platform::icons::favourite_icon(&job.icon, &job.target, job.size);
+                    let img =
+                        sidestage_platform::icons::favourite_icon(&job.icon, &job.target, job.size);
                     if res_tx.send((job.key, img)).is_err() {
                         break;
                     }
@@ -43,7 +44,13 @@ impl Textures {
                 }
             })
             .expect("spawn icon loader");
-        Self { icons: HashMap::new(), thumbs: HashMap::new(), requested: HashSet::new(), jobs, results }
+        Self {
+            icons: HashMap::new(),
+            thumbs: HashMap::new(),
+            requested: HashSet::new(),
+            jobs,
+            results,
+        }
     }
 
     /// Uploads finished icon loads. Call once per frame.
@@ -66,24 +73,42 @@ impl Textures {
         let key = Self::favourite_key(fav);
         if !self.requested.contains(&key) {
             self.requested.insert(key.clone());
-            let _ = self.jobs.send(IconJob { key: key.clone(), icon: fav.icon.clone(), target: fav.target.clone(), size: size_px });
+            let _ = self.jobs.send(IconJob {
+                key: key.clone(),
+                icon: fav.icon.clone(),
+                target: fav.target.clone(),
+                size: size_px,
+            });
         }
         self.icons.get(&key)
     }
 
     /// Preview of an icon source before it is saved (settings dialog).
-    pub fn preview(&mut self, key: &str, icon: &IconSource, target: &LaunchTarget, size_px: u32) -> Option<&TextureHandle> {
+    pub fn preview(
+        &mut self,
+        key: &str,
+        icon: &IconSource,
+        target: &LaunchTarget,
+        size_px: u32,
+    ) -> Option<&TextureHandle> {
         if !self.requested.contains(key) {
             self.requested.insert(key.to_string());
-            let _ = self.jobs.send(IconJob { key: key.into(), icon: icon.clone(), target: target.clone(), size: size_px });
+            let _ = self.jobs.send(IconJob {
+                key: key.into(),
+                icon: icon.clone(),
+                target: target.clone(),
+                size: size_px,
+            });
         }
         self.icons.get(key)
     }
 
     /// Forget all favourite icons, e.g. after the icon size changed.
     pub fn reload_favourites(&mut self) {
-        self.icons.retain(|k, _| !k.starts_with("fav:") && !k.starts_with("app-entry:"));
-        self.requested.retain(|k| !k.starts_with("fav:") && !k.starts_with("app-entry:"));
+        self.icons
+            .retain(|k, _| !k.starts_with("fav:") && !k.starts_with("app-entry:"));
+        self.requested
+            .retain(|k| !k.starts_with("fav:") && !k.starts_with("app-entry:"));
     }
 
     pub fn set_app_icon(&mut self, ctx: &egui::Context, app_key: &str, img: &RgbaImage) {
@@ -99,8 +124,13 @@ impl Textures {
     pub fn set_thumbnail(&mut self, ctx: &egui::Context, id: &WindowId, img: Option<&RgbaImage>) {
         match img {
             Some(img) => {
-                let tex = ctx.load_texture(format!("thumb:{id}"), to_color_image(img), TextureOptions::LINEAR);
-                self.thumbs.insert(id.clone(), (tex, [img.width as usize, img.height as usize]));
+                let tex = ctx.load_texture(
+                    format!("thumb:{id}"),
+                    to_color_image(img),
+                    TextureOptions::LINEAR,
+                );
+                self.thumbs
+                    .insert(id.clone(), (tex, [img.width as usize, img.height as usize]));
             }
             None => {
                 self.thumbs.remove(id);

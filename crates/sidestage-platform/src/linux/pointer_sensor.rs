@@ -33,8 +33,13 @@ impl SidebarIface {
 }
 
 enum Kind {
-    KWin { conn: zbus::blocking::Connection, script: std::path::PathBuf },
-    Gnome { conn: zbus::blocking::Connection },
+    KWin {
+        conn: zbus::blocking::Connection,
+        script: std::path::PathBuf,
+    },
+    Gnome {
+        conn: zbus::blocking::Connection,
+    },
 }
 
 pub struct PointerSensor {
@@ -56,7 +61,11 @@ impl PointerSensor {
             return None;
         };
         match r {
-            Ok(kind) => Some(PointerSensor { state, kind, rect: None }),
+            Ok(kind) => Some(PointerSensor {
+                state,
+                kind,
+                rect: None,
+            }),
             Err(e) => {
                 log::info!("pointer sensor unavailable: {e:#}");
                 None
@@ -70,7 +79,9 @@ impl PointerSensor {
             .serve_at(PATH, SidebarIface { state })?
             .build()
             .context("registering org.sidestage.Sidebar")?;
-        let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
         let script = dir.join(format!("sidestage-pointer-{}.js", std::process::id()));
         Ok(Kind::KWin { conn, script })
     }
@@ -78,20 +89,27 @@ impl PointerSensor {
     fn gnome(state: Arc<AtomicU8>) -> Result<Kind> {
         let conn = zbus::blocking::Connection::session()?;
         let c2 = conn.clone();
-        std::thread::Builder::new().name("gnome-pointer".into()).spawn(move || loop {
-            let r = (|| -> Result<()> {
-                let proxy = zbus::blocking::Proxy::new(&c2, "org.sidestage.Shell", "/org/sidestage/Shell", "org.sidestage.Shell1")?;
-                for msg in proxy.receive_signal("PointerInside")? {
-                    let (inside,): (bool,) = msg.body().deserialize()?;
-                    state.store(inside as u8, Ordering::Relaxed);
+        std::thread::Builder::new()
+            .name("gnome-pointer".into())
+            .spawn(move || loop {
+                let r = (|| -> Result<()> {
+                    let proxy = zbus::blocking::Proxy::new(
+                        &c2,
+                        "org.sidestage.Shell",
+                        "/org/sidestage/Shell",
+                        "org.sidestage.Shell1",
+                    )?;
+                    for msg in proxy.receive_signal("PointerInside")? {
+                        let (inside,): (bool,) = msg.body().deserialize()?;
+                        state.store(inside as u8, Ordering::Relaxed);
+                    }
+                    Ok(())
+                })();
+                if let Err(e) = r {
+                    log::debug!("GNOME pointer signal stream: {e:#}");
                 }
-                Ok(())
-            })();
-            if let Err(e) = r {
-                log::debug!("GNOME pointer signal stream: {e:#}");
-            }
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        })?;
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            })?;
         Ok(Kind::Gnome { conn })
     }
 
@@ -106,9 +124,14 @@ impl PointerSensor {
             Kind::KWin { conn, script } => kwin_load(conn, script, rect),
             Kind::Gnome { conn } => {
                 let [x, y, w, h] = rect.unwrap_or([0, 0, 0, 0]);
-                zbus::blocking::Proxy::new(conn, "org.sidestage.Shell", "/org/sidestage/Shell", "org.sidestage.Shell1")
-                    .and_then(|p| p.call::<_, _, ()>("WatchPointer", &(x, y, w, h)))
-                    .map_err(Into::into)
+                zbus::blocking::Proxy::new(
+                    conn,
+                    "org.sidestage.Shell",
+                    "/org/sidestage/Shell",
+                    "org.sidestage.Shell1",
+                )
+                .and_then(|p| p.call::<_, _, ()>("WatchPointer", &(x, y, w, h)))
+                .map_err(Into::into)
             }
         };
         if let Err(e) = r {
@@ -131,9 +154,16 @@ impl Drop for PointerSensor {
     }
 }
 
-fn kwin_load(conn: &zbus::blocking::Connection, script: &std::path::Path, rect: Option<[i32; 4]>) -> Result<()> {
-    let scripting = zbus::blocking::Proxy::new(conn, "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting")?;
-    let _: bool = scripting.call("unloadScript", &(SCRIPT_NAME,)).unwrap_or(false);
+fn kwin_load(
+    conn: &zbus::blocking::Connection,
+    script: &std::path::Path,
+    rect: Option<[i32; 4]>,
+) -> Result<()> {
+    let scripting =
+        zbus::blocking::Proxy::new(conn, "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting")?;
+    let _: bool = scripting
+        .call("unloadScript", &(SCRIPT_NAME,))
+        .unwrap_or(false);
     let Some([x, y, w, h]) = rect else {
         let _ = std::fs::remove_file(script);
         return Ok(());
@@ -163,6 +193,7 @@ check();
     }
     // KWin 6 exposes loaded scripts at /Scripting/Script<N>.
     let path = format!("/Scripting/Script{id}");
-    zbus::blocking::Proxy::new(conn, "org.kde.KWin", path.as_str(), "org.kde.kwin.Script")?.call::<_, _, ()>("run", &())?;
+    zbus::blocking::Proxy::new(conn, "org.kde.KWin", path.as_str(), "org.kde.kwin.Script")?
+        .call::<_, _, ()>("run", &())?;
     Ok(())
 }

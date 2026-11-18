@@ -41,7 +41,11 @@ pub enum LaunchTarget {
     /// (covers Store/UWP apps and Start-menu shortcuts).
     AppsFolder { parsing_name: String },
     /// A raw command line, split into program + arguments.
-    Command { program: String, #[serde(default)] args: Vec<String> },
+    Command {
+        program: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
 }
 
 impl LaunchTarget {
@@ -49,8 +53,12 @@ impl LaunchTarget {
     pub fn key(&self) -> String {
         match self {
             LaunchTarget::DesktopEntry { path } => format!("desktop:{}", path.display()),
-            LaunchTarget::Path { path, args } => format!("path:{}|{}", path.display(), args.join(" ")),
-            LaunchTarget::AppsFolder { parsing_name } => format!("apps:{}", parsing_name.to_lowercase()),
+            LaunchTarget::Path { path, args } => {
+                format!("path:{}|{}", path.display(), args.join(" "))
+            }
+            LaunchTarget::AppsFolder { parsing_name } => {
+                format!("apps:{}", parsing_name.to_lowercase())
+            }
             LaunchTarget::Command { program, args } => format!("cmd:{program}|{}", args.join(" ")),
         }
     }
@@ -80,7 +88,12 @@ pub struct Favourite {
 
 impl Favourite {
     pub fn new(name: impl Into<String>, target: LaunchTarget, icon: IconSource) -> Self {
-        Self { id: new_id("fav"), name: name.into(), target, icon }
+        Self {
+            id: new_id("fav"),
+            name: name.into(),
+            target,
+            icon,
+        }
     }
 }
 
@@ -100,7 +113,12 @@ fn yes() -> bool {
 
 impl Section {
     pub fn new(name: impl Into<String>) -> Self {
-        Self { id: new_id("sec"), name: name.into(), expanded: true, items: Vec::new() }
+        Self {
+            id: new_id("sec"),
+            name: name.into(),
+            expanded: true,
+            items: Vec::new(),
+        }
     }
 }
 
@@ -182,11 +200,19 @@ impl Settings {
     /// Clamp values that may come from a hand-edited file.
     pub fn sanitize(&mut self) {
         let clamp = |v: &mut f32, r: &std::ops::RangeInclusive<f32>, d: f32| {
-            *v = if v.is_finite() { v.clamp(*r.start(), *r.end()) } else { d };
+            *v = if v.is_finite() {
+                v.clamp(*r.start(), *r.end())
+            } else {
+                d
+            };
         };
         let d = Settings::default();
         clamp(&mut self.width, &Self::WIDTH_RANGE, d.width);
-        clamp(&mut self.preview_height, &Self::PREVIEW_RANGE, d.preview_height);
+        clamp(
+            &mut self.preview_height,
+            &Self::PREVIEW_RANGE,
+            d.preview_height,
+        );
         clamp(&mut self.icon_size, &Self::ICON_RANGE, d.icon_size);
         self.reveal_delay_ms = self.reveal_delay_ms.min(2000);
     }
@@ -207,7 +233,10 @@ impl Default for Config {
         Self {
             version: CONFIG_VERSION,
             settings: Settings::default(),
-            sections: ["Games", "Coding", "Work", "Everyday"].into_iter().map(Section::new).collect(),
+            sections: ["Games", "Coding", "Work", "Everyday"]
+                .into_iter()
+                .map(Section::new)
+                .collect(),
         }
     }
 }
@@ -237,7 +266,11 @@ impl Config {
                 }
                 Err(err) => {
                     let backup = path.with_extension(format!("broken-{}.json", unix_now()));
-                    log::error!("config {} is invalid ({err}); saved a copy as {}", path.display(), backup.display());
+                    log::error!(
+                        "config {} is invalid ({err}); saved a copy as {}",
+                        path.display(),
+                        backup.display()
+                    );
                     let _ = fs::copy(path, &backup);
                     Config::default()
                 }
@@ -257,7 +290,8 @@ impl Config {
         }
         let tmp = path.with_extension("json.tmp");
         {
-            let mut f = fs::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+            let mut f =
+                fs::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
             f.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
             f.sync_all()?;
         }
@@ -267,7 +301,10 @@ impl Config {
 
     pub fn find(&self, favourite_id: &str) -> Option<Slot> {
         self.sections.iter().enumerate().find_map(|(si, s)| {
-            s.items.iter().position(|f| f.id == favourite_id).map(|ii| (si, ii))
+            s.items
+                .iter()
+                .position(|f| f.id == favourite_id)
+                .map(|ii| (si, ii))
         })
     }
 
@@ -306,8 +343,12 @@ impl Config {
     /// Moves a favourite to `section_id` at `index` (clamped). Works within
     /// and across sections.
     pub fn move_favourite(&mut self, favourite_id: &str, section_id: &str, index: usize) -> bool {
-        let Some((from_s, from_i)) = self.find(favourite_id) else { return false };
-        let Some(to_s) = self.section_index(section_id) else { return false };
+        let Some((from_s, from_i)) = self.find(favourite_id) else {
+            return false;
+        };
+        let Some(to_s) = self.section_index(section_id) else {
+            return false;
+        };
         let fav = self.sections[from_s].items.remove(from_i);
         let mut index = index;
         if from_s == to_s && from_i < index {
@@ -346,7 +387,9 @@ impl Config {
 
     /// Moves a section by `delta` positions (negative = up).
     pub fn shift_section(&mut self, section_id: &str, delta: isize) -> bool {
-        let Some(i) = self.section_index(section_id) else { return false };
+        let Some(i) = self.section_index(section_id) else {
+            return false;
+        };
         let j = i as isize + delta;
         if j < 0 || j as usize >= self.sections.len() {
             return false;
@@ -357,7 +400,9 @@ impl Config {
     }
 
     pub fn move_section(&mut self, section_id: &str, to: usize) -> bool {
-        let Some(i) = self.section_index(section_id) else { return false };
+        let Some(i) = self.section_index(section_id) else {
+            return false;
+        };
         let s = self.sections.remove(i);
         let to = if i < to { to - 1 } else { to };
         self.sections.insert(to.min(self.sections.len()), s);
@@ -367,11 +412,17 @@ impl Config {
     /// Deletes a section. Its favourites move to `move_items_to` when given,
     /// otherwise they are deleted with it.
     pub fn delete_section(&mut self, section_id: &str, move_items_to: Option<&str>) -> bool {
-        let Some(i) = self.section_index(section_id) else { return false };
+        let Some(i) = self.section_index(section_id) else {
+            return false;
+        };
         let removed = self.sections.remove(i);
         if let Some(target) = move_items_to.and_then(|t| self.section_index(t)) {
             for fav in removed.items {
-                if !self.sections[target].items.iter().any(|f| f.target.key() == fav.target.key()) {
+                if !self.sections[target]
+                    .items
+                    .iter()
+                    .any(|f| f.target.key() == fav.target.key())
+                {
                     self.sections[target].items.push(fav);
                 }
             }
@@ -381,12 +432,19 @@ impl Config {
 }
 
 fn unique_name(sections: &[Section], wanted: &str) -> String {
-    let base = if wanted.is_empty() { "New section" } else { wanted };
+    let base = if wanted.is_empty() {
+        "New section"
+    } else {
+        wanted
+    };
     let taken = |n: &str| sections.iter().any(|s| s.name.eq_ignore_ascii_case(n));
     if !taken(base) {
         return base.to_string();
     }
-    (2..).map(|n| format!("{base} {n}")).find(|n| !taken(n)).unwrap()
+    (2..)
+        .map(|n| format!("{base} {n}"))
+        .find(|n| !taken(n))
+        .unwrap()
 }
 
 fn unix_now() -> u64 {
@@ -400,7 +458,9 @@ fn unix_now() -> u64 {
 pub fn config_dir() -> PathBuf {
     #[cfg(windows)]
     {
-        let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        let base = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
         base.join(crate::APP_NAME)
     }
     #[cfg(not(windows))]
@@ -419,7 +479,14 @@ mod tests {
     use super::*;
 
     fn fav(name: &str) -> Favourite {
-        Favourite::new(name, LaunchTarget::Command { program: name.into(), args: vec![] }, IconSource::Auto)
+        Favourite::new(
+            name,
+            LaunchTarget::Command {
+                program: name.into(),
+                args: vec![],
+            },
+            IconSource::Auto,
+        )
     }
 
     #[test]
@@ -436,10 +503,20 @@ mod tests {
         let coding = c.sections[1].id.clone();
         let a = c.add_favourite(&games, fav("a")).unwrap();
         let b = c.add_favourite(&games, fav("b")).unwrap();
-        assert!(c.add_favourite(&games, fav("a")).is_none(), "duplicate rejected");
+        assert!(
+            c.add_favourite(&games, fav("a")).is_none(),
+            "duplicate rejected"
+        );
         // reorder within section: move a after b
         assert!(c.move_favourite(&a, &games, 2));
-        assert_eq!(c.sections[0].items.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["b", "a"]);
+        assert_eq!(
+            c.sections[0]
+                .items
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            ["b", "a"]
+        );
         // move across sections
         assert!(c.move_favourite(&b, &coding, 0));
         assert_eq!(c.find(&b), Some((1, 0)));

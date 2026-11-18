@@ -42,7 +42,10 @@ pub enum WindowEvent {
     /// An application icon, keyed by `WindowInfo::app_key`.
     Icon { app_key: String, image: RgbaImage },
     /// A still preview of a window, or `None` to drop a stale one.
-    Thumbnail { id: WindowId, image: Option<RgbaImage> },
+    Thumbnail {
+        id: WindowId,
+        image: Option<RgbaImage>,
+    },
     /// Backend availability / diagnostics, shown in the sidebar footer.
     Status(BackendStatus),
 }
@@ -104,7 +107,8 @@ impl WindowTracker {
         let changed = match event {
             WindowEvent::Snapshot(list) => {
                 let mut changed = false;
-                let incoming: std::collections::HashSet<_> = list.iter().map(|w| w.id.clone()).collect();
+                let incoming: std::collections::HashSet<_> =
+                    list.iter().map(|w| w.id.clone()).collect();
                 self.windows.retain(|id, t| {
                     let keep = incoming.contains(id);
                     changed |= !keep && t.info.minimized;
@@ -116,7 +120,11 @@ impl WindowTracker {
                 changed
             }
             WindowEvent::Upsert(w) => self.upsert(w.clone()),
-            WindowEvent::Removed(id) => self.windows.remove(id).map(|t| t.info.minimized).unwrap_or(false),
+            WindowEvent::Removed(id) => self
+                .windows
+                .remove(id)
+                .map(|t| t.info.minimized)
+                .unwrap_or(false),
             _ => false,
         };
         if changed {
@@ -140,7 +148,13 @@ impl WindowTracker {
             }
             None => {
                 let minimized = info.minimized;
-                self.windows.insert(info.id.clone(), Tracked { info, minimized_seq: seq });
+                self.windows.insert(
+                    info.id.clone(),
+                    Tracked {
+                        info,
+                        minimized_seq: seq,
+                    },
+                );
                 minimized
             }
         }
@@ -149,18 +163,30 @@ impl WindowTracker {
     /// Minimized windows grouped by application. Groups are ordered by their
     /// most recently minimized member so the newest stays on top.
     pub fn groups(&self) -> Vec<WindowGroup> {
-        let mut minimized: Vec<&Tracked> = self.windows.values().filter(|t| t.info.minimized).collect();
-        minimized.sort_by(|a, b| b.minimized_seq.cmp(&a.minimized_seq).then_with(|| a.info.id.cmp(&b.info.id)));
+        let mut minimized: Vec<&Tracked> =
+            self.windows.values().filter(|t| t.info.minimized).collect();
+        minimized.sort_by(|a, b| {
+            b.minimized_seq
+                .cmp(&a.minimized_seq)
+                .then_with(|| a.info.id.cmp(&b.info.id))
+        });
         let mut order: Vec<String> = Vec::new();
         let mut by_app: HashMap<&str, WindowGroup> = HashMap::new();
         for t in minimized {
             let g = by_app.entry(&t.info.app_key).or_insert_with(|| {
                 order.push(t.info.app_key.clone());
-                WindowGroup { app_key: t.info.app_key.clone(), app_name: t.info.app_name.clone(), windows: vec![] }
+                WindowGroup {
+                    app_key: t.info.app_key.clone(),
+                    app_name: t.info.app_name.clone(),
+                    windows: vec![],
+                }
             });
             g.windows.push(t.info.clone());
         }
-        order.into_iter().filter_map(|k| by_app.remove(k.as_str())).collect()
+        order
+            .into_iter()
+            .filter_map(|k| by_app.remove(k.as_str()))
+            .collect()
     }
 
     pub fn minimized_count(&self) -> usize {
@@ -216,7 +242,13 @@ mod tests {
         let g = t.groups();
         assert_eq!(g.len(), 2);
         assert_eq!(g[0].app_key, "editor");
-        assert_eq!(g[0].windows.iter().map(|w| w.id.0.as_str()).collect::<Vec<_>>(), ["3", "1"]);
+        assert_eq!(
+            g[0].windows
+                .iter()
+                .map(|w| w.id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["3", "1"]
+        );
         assert_eq!(g[1].app_key, "browser");
     }
 

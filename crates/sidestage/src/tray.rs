@@ -44,13 +44,27 @@ impl ksni::Tray for LinuxTray {
             .map(|&s| {
                 let img = crate::brand::app_icon(s);
                 // SNI wants ARGB32 in network byte order.
-                let data = img.pixels.as_chunks::<4>().0.iter().flat_map(|p| [p[3], p[0], p[1], p[2]]).collect();
-                ksni::Icon { width: s as i32, height: s as i32, data }
+                let data = img
+                    .pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .flat_map(|p| [p[3], p[0], p[1], p[2]])
+                    .collect();
+                ksni::Icon {
+                    width: s as i32,
+                    height: s as i32,
+                    data,
+                }
             })
             .collect()
     }
     fn tool_tip(&self) -> ksni::ToolTip {
-        ksni::ToolTip { title: "Sidestage".into(), description: "Favourites and minimized windows".into(), ..Default::default() }
+        ksni::ToolTip {
+            title: "Sidestage".into(),
+            description: "Favourites and minimized windows".into(),
+            ..Default::default()
+        }
     }
     fn activate(&mut self, _x: i32, _y: i32) {
         self.send(TrayCommand::ToggleSidebar);
@@ -107,7 +121,11 @@ impl Tray {
         let settings = MenuItem::new("Settings…", true, None);
         let quit = MenuItem::new("Quit Sidestage", true, None);
         let _ = menu.append_items(&[&toggle, &settings, &PredefinedMenuItem::separator(), &quit]);
-        let (toggle_id, settings_id, quit_id) = (toggle.id().clone(), settings.id().clone(), quit.id().clone());
+        let (toggle_id, settings_id, quit_id) = (
+            toggle.id().clone(),
+            settings.id().clone(),
+            quit.id().clone(),
+        );
         let menu_tx = tx.clone();
         let menu_ctx = ctx.clone();
         MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
@@ -136,7 +154,9 @@ impl Tray {
         }));
         let img = crate::brand::app_icon(32);
         let icon = tray_icon::Icon::from_rgba(img.pixels, img.width, img.height).ok();
-        let mut builder = tray_icon::TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Sidestage");
+        let mut builder = tray_icon::TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("Sidestage");
         if let Some(icon) = icon {
             builder = builder.with_icon(icon);
         }

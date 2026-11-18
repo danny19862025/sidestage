@@ -21,7 +21,9 @@ pub struct Guard {
 fn socket_name() -> String {
     // Abstract socket: per user and per display, no file to clean up.
     let uid = unsafe { libc_getuid() };
-    let display = std::env::var("WAYLAND_DISPLAY").or_else(|_| std::env::var("DISPLAY")).unwrap_or_default();
+    let display = std::env::var("WAYLAND_DISPLAY")
+        .or_else(|_| std::env::var("DISPLAY"))
+        .unwrap_or_default();
     format!("sidestage-{uid}-{display}")
 }
 
@@ -51,7 +53,11 @@ pub fn acquire(req: Request) -> Instance {
         Ok(l) => Instance::Primary(Guard { listener: Some(l) }),
         Err(_) => {
             if let Ok(mut s) = UnixStream::connect_addr(&addr) {
-                let _ = s.write_all(if req == Request::Quit { b"quit\n" } else { b"settings\n" });
+                let _ = s.write_all(if req == Request::Quit {
+                    b"quit\n"
+                } else {
+                    b"settings\n"
+                });
                 return Instance::Secondary;
             }
             Instance::Primary(Guard { listener: None })
@@ -62,7 +68,9 @@ pub fn acquire(req: Request) -> Instance {
 #[cfg(target_os = "linux")]
 impl Guard {
     pub fn listen(&mut self, tx: Sender<TrayCommand>, ctx: egui::Context) {
-        let Some(l) = self.listener.take() else { return };
+        let Some(l) = self.listener.take() else {
+            return;
+        };
         std::thread::Builder::new()
             .name("single-instance".into())
             .spawn(move || {
@@ -132,7 +140,11 @@ pub fn acquire(req: Request) -> Instance {
 impl Guard {
     pub fn listen(&mut self, tx: Sender<TrayCommand>, ctx: egui::Context) {
         sidestage_platform::on_instance_signal(Box::new(move |quit| {
-            let _ = tx.send(if quit { TrayCommand::Quit } else { TrayCommand::Settings });
+            let _ = tx.send(if quit {
+                TrayCommand::Quit
+            } else {
+                TrayCommand::Settings
+            });
             ctx.request_repaint();
         }));
     }

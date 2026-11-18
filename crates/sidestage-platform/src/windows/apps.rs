@@ -5,11 +5,11 @@ use std::path::Path;
 
 use sidestage_core::{IconSource, LaunchTarget};
 use windows::core::HSTRING;
-use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::Foundation::PROPERTYKEY;
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::UI::Shell::{
-    BHID_EnumItems, IEnumShellItems, IShellItem, IShellItem2, SHCreateItemFromParsingName, SIGDN_NORMALDISPLAY,
-    SIGDN_PARENTRELATIVEPARSING,
+    BHID_EnumItems, IEnumShellItems, IShellItem, IShellItem2, SHCreateItemFromParsingName,
+    SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING,
 };
 
 use crate::apps::AppEntry;
@@ -32,10 +32,15 @@ fn display_name(item: &IShellItem, kind: windows::Win32::UI::Shell::SIGDN) -> Op
 pub fn installed_apps() -> Vec<AppEntry> {
     let mut out = Vec::new();
     unsafe {
-        let Ok(folder) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from("shell:AppsFolder"), None) else {
+        let Ok(folder) = SHCreateItemFromParsingName::<_, _, IShellItem>(
+            &HSTRING::from("shell:AppsFolder"),
+            None,
+        ) else {
             return out;
         };
-        let Ok(items) = folder.BindToHandler::<_, IEnumShellItems>(None, &BHID_EnumItems) else { return out };
+        let Ok(items) = folder.BindToHandler::<_, IEnumShellItems>(None, &BHID_EnumItems) else {
+            return out;
+        };
         loop {
             let mut fetched = 0u32;
             let mut slot: [Option<IShellItem>; 1] = [None];
@@ -43,7 +48,9 @@ pub fn installed_apps() -> Vec<AppEntry> {
                 break;
             }
             let Some(item) = slot[0].take() else { break };
-            let Some(name) = display_name(&item, SIGDN_NORMALDISPLAY) else { continue };
+            let Some(name) = display_name(&item, SIGDN_NORMALDISPLAY) else {
+                continue;
+            };
             // The AUMID launches the app through shell:AppsFolder\<id>.
             let aumid = windows::core::Interface::cast::<IShellItem2>(&item)
                 .ok()
@@ -54,13 +61,17 @@ pub fn installed_apps() -> Vec<AppEntry> {
                     s
                 })
                 .or_else(|| display_name(&item, SIGDN_PARENTRELATIVEPARSING));
-            let Some(aumid) = aumid.filter(|a| !a.is_empty()) else { continue };
+            let Some(aumid) = aumid.filter(|a| !a.is_empty()) else {
+                continue;
+            };
             if name.to_lowercase().starts_with("uninstall") {
                 continue;
             }
             // Desktop apps report their exe path; show the file name as a hint.
             let subtitle = if aumid.contains('\\') {
-                Path::new(&aumid).file_name().map(|f| f.to_string_lossy().into_owned())
+                Path::new(&aumid)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
             } else {
                 Some("Microsoft Store app".to_string())
             };
@@ -68,7 +79,9 @@ pub fn installed_apps() -> Vec<AppEntry> {
                 keywords: vec![aumid.clone()],
                 name,
                 subtitle,
-                target: LaunchTarget::AppsFolder { parsing_name: aumid },
+                target: LaunchTarget::AppsFolder {
+                    parsing_name: aumid,
+                },
                 icon: IconSource::Auto,
             });
         }
@@ -90,7 +103,10 @@ pub fn from_path(path: &Path) -> Option<AppEntry> {
     Some(AppEntry {
         name,
         subtitle,
-        target: LaunchTarget::Path { path: path.to_path_buf(), args: vec![] },
+        target: LaunchTarget::Path {
+            path: path.to_path_buf(),
+            args: vec![],
+        },
         icon: IconSource::Auto,
         keywords: vec![],
     })

@@ -15,8 +15,10 @@ mod tray;
 use std::sync::mpsc;
 
 fn main() -> eframe::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,usvg=error,eframe=warn,egui_glow=warn"))
-        .init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info,usvg=error,eframe=warn,egui_glow=warn"),
+    )
+    .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version" || a == "-V") {
         println!("sidestage {}", env!("CARGO_PKG_VERSION"));
@@ -31,7 +33,11 @@ fn main() -> eframe::Result<()> {
     let open_settings = args.iter().any(|a| a == "--settings");
     let quit = args.iter().any(|a| a == "--quit");
 
-    let request = if quit { single::Request::Quit } else { single::Request::Settings };
+    let request = if quit {
+        single::Request::Quit
+    } else {
+        single::Request::Settings
+    };
     let mut guard = match single::acquire(request) {
         single::Instance::Primary(_) if quit => {
             log::info!("Sidestage is not running.");
@@ -69,7 +75,11 @@ fn main() -> eframe::Result<()> {
         .with_window_type(egui::X11WindowType::Dock)
         .with_inner_size([config.settings.width + app::OUTER_MARGIN, 600.0])
         .with_position([0.0, 0.0])
-        .with_icon(egui::IconData { rgba: icon.pixels, width: icon.width, height: icon.height });
+        .with_icon(egui::IconData {
+            rgba: icon.pixels,
+            width: icon.width,
+            height: icon.height,
+        });
 
     let mut options = eframe::NativeOptions {
         viewport,
@@ -99,7 +109,8 @@ fn main() -> eframe::Result<()> {
             let (tx, rx) = mpsc::channel();
             guard.listen(tx, cc.egui_ctx.clone());
             app.extra_commands(rx);
-            app.textures.set_app_icon(&cc.egui_ctx, "__brand", &brand::app_icon(64));
+            app.textures
+                .set_app_icon(&cc.egui_ctx, "__brand", &brand::app_icon(64));
             Ok(Box::new(AppWithGuard { app, _guard: guard }))
         }),
     )

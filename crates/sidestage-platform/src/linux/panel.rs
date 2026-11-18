@@ -11,7 +11,8 @@ use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::shape::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::{
-    AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask, PropMode, Window,
+    AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask, PropMode,
+    Window,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -80,11 +81,25 @@ fn monitors_inner() -> Result<Vec<MonitorInfo>> {
             Some((_, wy, _, wh)) => {
                 let top = wy.max(y);
                 let bottom = (wy + wh).min(y + h);
-                if bottom - top > h / 2 { (x, top, w, bottom - top) } else { (x, y, w, h) }
+                if bottom - top > h / 2 {
+                    (x, top, w, bottom - top)
+                } else {
+                    (x, y, w, h)
+                }
             }
             None => (x, y, w, h),
         };
-        out.push(MonitorInfo { name, index: i, primary: m.primary, x, y, width: w, height: h, work, scale });
+        out.push(MonitorInfo {
+            name,
+            index: i,
+            primary: m.primary,
+            x,
+            y,
+            width: w,
+            height: h,
+            work,
+            scale,
+        });
     }
     if !out.iter().any(|m| m.primary) {
         if let Some(first) = out.first_mut() {
@@ -95,7 +110,18 @@ fn monitors_inner() -> Result<Vec<MonitorInfo>> {
 }
 
 fn xft_dpi(conn: &RustConnection, root: Window) -> Option<f32> {
-    let r = conn.get_property(false, root, AtomEnum::RESOURCE_MANAGER, AtomEnum::STRING, 0, 1 << 16).ok()?.reply().ok()?;
+    let r = conn
+        .get_property(
+            false,
+            root,
+            AtomEnum::RESOURCE_MANAGER,
+            AtomEnum::STRING,
+            0,
+            1 << 16,
+        )
+        .ok()?
+        .reply()
+        .ok()?;
     let text = String::from_utf8_lossy(&r.value).into_owned();
     text.lines()
         .find_map(|l| l.strip_prefix("Xft.dpi:"))
@@ -133,19 +159,46 @@ impl Panel {
         let (conn, screen_num) = connect()?;
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
-        let root_size = (screen.width_in_pixels as i32, screen.height_in_pixels as i32);
+        let root_size = (
+            screen.width_in_pixels as i32,
+            screen.height_in_pixels as i32,
+        );
         let atoms = Atoms::new(&conn)?.reply()?;
-        let p = Panel { conn, root, root_size, window, atoms, last: None, verified_at: std::time::Instant::now(), reserver: None, reserver_tried: false, inside: None, sensor: None, sensor_tried: false };
+        let p = Panel {
+            conn,
+            root,
+            root_size,
+            window,
+            atoms,
+            last: None,
+            verified_at: std::time::Instant::now(),
+            reserver: None,
+            reserver_tried: false,
+            inside: None,
+            sensor: None,
+            sensor_tried: false,
+        };
         p.init()?;
         Ok(p)
     }
 
     fn init(&self) -> Result<()> {
         let a = &self.atoms;
-        self.conn.change_property32(PropMode::REPLACE, self.window, a._NET_WM_WINDOW_TYPE, AtomEnum::ATOM, &[a._NET_WM_WINDOW_TYPE_DOCK])?;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            a._NET_WM_WINDOW_TYPE,
+            AtomEnum::ATOM,
+            &[a._NET_WM_WINDOW_TYPE_DOCK],
+        )?;
         self.set_input_hint(false)?;
         // The window is already mapped, so state changes go through the WM.
-        for state in [a._NET_WM_STATE_ABOVE, a._NET_WM_STATE_STICKY, a._NET_WM_STATE_SKIP_TASKBAR, a._NET_WM_STATE_SKIP_PAGER] {
+        for state in [
+            a._NET_WM_STATE_ABOVE,
+            a._NET_WM_STATE_STICKY,
+            a._NET_WM_STATE_SKIP_TASKBAR,
+            a._NET_WM_STATE_SKIP_PAGER,
+        ] {
             self.send_wm(a._NET_WM_STATE, [1, state, 0, 1, 0])?;
         }
         self.send_wm(a._NET_WM_DESKTOP, [0xFFFF_FFFF, 1, 0, 0, 0])?;
@@ -155,13 +208,25 @@ impl Panel {
             self.window,
             a._NET_WM_STATE,
             AtomEnum::ATOM,
-            &[a._NET_WM_STATE_ABOVE, a._NET_WM_STATE_STICKY, a._NET_WM_STATE_SKIP_TASKBAR, a._NET_WM_STATE_SKIP_PAGER],
+            &[
+                a._NET_WM_STATE_ABOVE,
+                a._NET_WM_STATE_STICKY,
+                a._NET_WM_STATE_SKIP_TASKBAR,
+                a._NET_WM_STATE_SKIP_PAGER,
+            ],
         )?;
-        self.conn.change_property32(PropMode::REPLACE, self.window, a._NET_WM_DESKTOP, AtomEnum::CARDINAL, &[0xFFFF_FFFF])?;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            a._NET_WM_DESKTOP,
+            AtomEnum::CARDINAL,
+            &[0xFFFF_FFFF],
+        )?;
         // Our own crossing events, independent of the toolkit's.
         self.conn.change_window_attributes(
             self.window,
-            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(EventMask::ENTER_WINDOW | EventMask::LEAVE_WINDOW),
+            &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
+                .event_mask(EventMask::ENTER_WINDOW | EventMask::LEAVE_WINDOW),
         )?;
         self.conn.flush()?;
         Ok(())
@@ -176,8 +241,16 @@ impl Panel {
         while let Ok(Some(ev)) = self.conn.poll_for_event() {
             match ev {
                 // Ignore crossings into/out of our own child windows.
-                Event::EnterNotify(e) if e.detail != x11rb::protocol::xproto::NotifyDetail::INFERIOR => self.inside = Some(true),
-                Event::LeaveNotify(e) if e.detail != x11rb::protocol::xproto::NotifyDetail::INFERIOR => self.inside = Some(false),
+                Event::EnterNotify(e)
+                    if e.detail != x11rb::protocol::xproto::NotifyDetail::INFERIOR =>
+                {
+                    self.inside = Some(true)
+                }
+                Event::LeaveNotify(e)
+                    if e.detail != x11rb::protocol::xproto::NotifyDetail::INFERIOR =>
+                {
+                    self.inside = Some(false)
+                }
                 _ => {}
             }
         }
@@ -198,15 +271,31 @@ impl Panel {
     fn set_input_hint(&self, input: bool) -> Result<()> {
         // WM_HINTS: flags (InputHint = 1), input, initial_state, ... (9 CARD32).
         let hints = [1u32, input as u32, 1, 0, 0, 0, 0, 0, 0];
-        self.conn.change_property32(PropMode::REPLACE, self.window, self.atoms.WM_HINTS, self.atoms.WM_HINTS, &hints)?;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            self.atoms.WM_HINTS,
+            self.atoms.WM_HINTS,
+            &hints,
+        )?;
         Ok(())
     }
 
     /// Actual position/size of the window (root coordinates).
     fn actual(&self) -> Option<(i32, i32, i32, i32)> {
         let geo = self.conn.get_geometry(self.window).ok()?.reply().ok()?;
-        let tr = self.conn.translate_coordinates(self.window, self.root, 0, 0).ok()?.reply().ok()?;
-        Some((tr.dst_x as i32, tr.dst_y as i32, geo.width as i32, geo.height as i32))
+        let tr = self
+            .conn
+            .translate_coordinates(self.window, self.root, 0, 0)
+            .ok()?
+            .reply()
+            .ok()?;
+        Some((
+            tr.dst_x as i32,
+            tr.dst_y as i32,
+            geo.width as i32,
+            geo.height as i32,
+        ))
     }
 
     pub fn apply(&mut self, g: &PanelGeometry) {
@@ -220,7 +309,10 @@ impl Panel {
             if self.actual() == Some((g.x, g.y, g.width.max(1), g.height.max(1))) {
                 return;
             }
-            log::debug!("sidebar geometry drifted to {:?}; re-applying", self.actual());
+            log::debug!(
+                "sidebar geometry drifted to {:?}; re-applying",
+                self.actual()
+            );
         }
         if let Err(e) = self.apply_inner(g) {
             log::warn!("panel placement failed: {e:#}");
@@ -233,10 +325,16 @@ impl Panel {
             self.reserver_tried = true;
             match super::reserve::LayerReserver::new() {
                 Ok(r) => self.reserver = Some(r),
-                Err(e) => log::info!("layer-shell reservation unavailable ({e:#}); trying the GNOME extension"),
+                Err(e) => log::info!(
+                    "layer-shell reservation unavailable ({e:#}); trying the GNOME extension"
+                ),
             }
         }
-        let scale = if g.monitor.scale > 0.0 { g.monitor.scale } else { 1.0 };
+        let scale = if g.monitor.scale > 0.0 {
+            g.monitor.scale
+        } else {
+            1.0
+        };
         let logical = (g.reserve as f32 / scale).round() as u32;
         match self.reserver.as_mut() {
             Some(r) => r.set((logical > 0).then(|| super::reserve::Reservation {
@@ -256,25 +354,60 @@ impl Panel {
                 self.sensor = super::pointer_sensor::PointerSensor::new();
             }
             if let Some(sensor) = self.sensor.as_mut() {
-                let s = if g.monitor.scale > 0.0 { g.monitor.scale } else { 1.0 };
+                let s = if g.monitor.scale > 0.0 {
+                    g.monitor.scale
+                } else {
+                    1.0
+                };
                 let l = |v: i32| (v as f32 / s).round() as i32;
-                sensor.set_rect(g.auto_hide.then(|| [l(g.x), l(g.y), l(g.width), l(g.height)]));
+                sensor.set_rect(
+                    g.auto_hide
+                        .then(|| [l(g.x), l(g.y), l(g.width), l(g.height)]),
+                );
             }
         }
         self.conn.configure_window(
             self.window,
-            &ConfigureWindowAux::new().x(g.x).y(g.y).width(g.width.max(1) as u32).height(g.height.max(1) as u32),
+            &ConfigureWindowAux::new()
+                .x(g.x)
+                .y(g.y)
+                .width(g.width.max(1) as u32)
+                .height(g.height.max(1) as u32),
         )?;
         // Auto-hidden: keep the window size (resizing an XWayland dock under
         // the pointer confuses pointer focus) and narrow the input shape.
         match g.collapsed_strip {
             Some(strip) => {
-                let x = if g.edge == Edge::Left { 0 } else { (g.width - strip) as i16 };
-                let rect = x11rb::protocol::xproto::Rectangle { x, y: 0, width: strip.max(1) as u16, height: g.height.max(1) as u16 };
-                self.conn.shape_rectangles(shape::SO::SET, shape::SK::INPUT, x11rb::protocol::xproto::ClipOrdering::UNSORTED, self.window, 0, 0, &[rect])?;
+                let x = if g.edge == Edge::Left {
+                    0
+                } else {
+                    (g.width - strip) as i16
+                };
+                let rect = x11rb::protocol::xproto::Rectangle {
+                    x,
+                    y: 0,
+                    width: strip.max(1) as u16,
+                    height: g.height.max(1) as u16,
+                };
+                self.conn.shape_rectangles(
+                    shape::SO::SET,
+                    shape::SK::INPUT,
+                    x11rb::protocol::xproto::ClipOrdering::UNSORTED,
+                    self.window,
+                    0,
+                    0,
+                    &[rect],
+                )?;
             }
             None => {
-                self.conn.shape_mask(shape::SO::SET, shape::SK::INPUT, self.window, 0, 0, x11rb::NONE)?;
+                self.conn.shape_mask(
+                    shape::SO::SET,
+                    shape::SK::INPUT,
+                    self.window,
+                    0,
+                    0,
+                    x11rb::NONE,
+                )?;
             }
         }
         let mut partial = [0u32; 12];
@@ -297,8 +430,20 @@ impl Panel {
             }
         }
         let a = &self.atoms;
-        self.conn.change_property32(PropMode::REPLACE, self.window, a._NET_WM_STRUT_PARTIAL, AtomEnum::CARDINAL, &partial)?;
-        self.conn.change_property32(PropMode::REPLACE, self.window, a._NET_WM_STRUT, AtomEnum::CARDINAL, &partial[..4])?;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            a._NET_WM_STRUT_PARTIAL,
+            AtomEnum::CARDINAL,
+            &partial,
+        )?;
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            a._NET_WM_STRUT,
+            AtomEnum::CARDINAL,
+            &partial[..4],
+        )?;
         self.conn.flush()?;
         Ok(())
     }
@@ -330,7 +475,9 @@ impl Panel {
             super::gnome::set_reserved_space("", Edge::Left, 0);
         }
         let a = &self.atoms;
-        let _ = self.conn.delete_property(self.window, a._NET_WM_STRUT_PARTIAL);
+        let _ = self
+            .conn
+            .delete_property(self.window, a._NET_WM_STRUT_PARTIAL);
         let _ = self.conn.delete_property(self.window, a._NET_WM_STRUT);
         let _ = self.conn.flush();
     }

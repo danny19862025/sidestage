@@ -23,7 +23,10 @@ pub fn paint(p: &Painter, rect: Rect, glyph: Glyph, color: Color32) {
             let cc = c + vec2(-s * 0.06, -s * 0.06);
             p.circle_stroke(cc, r, stroke);
             let d = std::f32::consts::FRAC_1_SQRT_2;
-            p.line_segment([cc + vec2(r * d, r * d), c + vec2(s * 0.32, s * 0.32)], stroke);
+            p.line_segment(
+                [cc + vec2(r * d, r * d), c + vec2(s * 0.32, s * 0.32)],
+                stroke,
+            );
         }
         Glyph::Plus => {
             let h = s * 0.3;
@@ -60,7 +63,12 @@ pub fn paint(p: &Painter, rect: Rect, glyph: Glyph, color: Color32) {
 /// A chevron that rotates from pointing right (`t = 0`) to down (`t = 1`).
 pub fn chevron(p: &Painter, c: Pos2, h: f32, t: f32, stroke: Stroke) {
     let angle = t * std::f32::consts::FRAC_PI_2;
-    let rot = |v: egui::Vec2| vec2(v.x * angle.cos() - v.y * angle.sin(), v.x * angle.sin() + v.y * angle.cos());
+    let rot = |v: egui::Vec2| {
+        vec2(
+            v.x * angle.cos() - v.y * angle.sin(),
+            v.x * angle.sin() + v.y * angle.cos(),
+        )
+    };
     let pts = [vec2(-h * 0.5, -h), vec2(h * 0.5, 0.0), vec2(-h * 0.5, h)].map(|v| c + rot(v));
     p.add(Shape::line(pts.to_vec(), stroke));
 }
@@ -72,6 +80,13 @@ pub fn count_badge(p: &Painter, anchor: Pos2, n: usize, fill: Color32, text: Col
     let size = vec2((galley.size().x + 9.0).max(17.0), 17.0);
     let rect = Rect::from_center_size(anchor, size);
     p.rect_filled(rect, 8.5, fill);
-    p.galley(pos2(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0), galley, text);
+    p.galley(
+        pos2(
+            rect.center().x - galley.size().x / 2.0,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        text,
+    );
     rect
 }

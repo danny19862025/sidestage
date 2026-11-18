@@ -19,13 +19,17 @@ pub struct KwinScreenshot {
 
 impl KwinScreenshot {
     pub fn new() -> Result<Self> {
-        Ok(Self { conn: zbus::blocking::Connection::session()? })
+        Ok(Self {
+            conn: zbus::blocking::Connection::session()?,
+        })
     }
 
     /// Captures a window by its KWin internal UUID (`{xxxxxxxx-...}`).
     pub fn capture_window(&self, uuid: &str, max_size: u32) -> Result<RgbaImage> {
-        let (reader, writer): (std::os::unix::net::UnixStream, std::os::unix::net::UnixStream) =
-            std::os::unix::net::UnixStream::pair()?;
+        let (reader, writer): (
+            std::os::unix::net::UnixStream,
+            std::os::unix::net::UnixStream,
+        ) = std::os::unix::net::UnixStream::pair()?;
         let mut options: HashMap<&str, Value> = HashMap::new();
         options.insert("include-decoration", Value::from(false));
         options.insert("include-shadow", Value::from(false));
@@ -48,19 +52,28 @@ impl KwinScreenshot {
         drop(writer_fd);
         let reply = reply.context("KWin refused CaptureWindow")?;
         let meta: HashMap<String, OwnedValue> = reply.body().deserialize()?;
-        let data = reader_thread.join().map_err(|_| anyhow!("reader panicked"))??;
+        let data = reader_thread
+            .join()
+            .map_err(|_| anyhow!("reader panicked"))??;
         let get = |k: &str| -> Result<u32> {
             meta.get(k)
                 .and_then(|v| u32::try_from(v).ok())
                 .ok_or_else(|| anyhow!("missing {k} in screenshot metadata"))
         };
-        let (w, h, stride, format) = (get("width")?, get("height")?, get("stride")?, get("format")?);
+        let (w, h, stride, format) = (
+            get("width")?,
+            get("height")?,
+            get("stride")?,
+            get("format")?,
+        );
         if w == 0 || h == 0 || data.len() < (stride * h) as usize {
             bail!("short screenshot ({} bytes for {w}x{h})", data.len());
         }
         let mut pixels = Vec::with_capacity((w * h * 4) as usize);
         for row in 0..h as usize {
-            pixels.extend_from_slice(&data[row * stride as usize..row * stride as usize + w as usize * 4]);
+            pixels.extend_from_slice(
+                &data[row * stride as usize..row * stride as usize + w as usize * 4],
+            );
         }
         // QImage::Format values: 4 RGB32, 5 ARGB32, 6 ARGB32_Premultiplied
         // (BGRA bytes on little endian); 16 RGBX8888, 17 RGBA8888,

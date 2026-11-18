@@ -32,16 +32,44 @@ pub fn app_icon(size: u32) -> RgbaImage {
             // Background tile: blue→violet gradient.
             let t = (px + py) / (2.0 * size as f32);
             let bg = [0.29 + 0.25 * t, 0.42 - 0.08 * t, 0.98 - 0.02 * t];
-            blend(&mut c, bg, rounded_rect_alpha(px, py, 2.0 * s, 2.0 * s, 62.0 * s, 62.0 * s, 14.0 * s));
+            blend(
+                &mut c,
+                bg,
+                rounded_rect_alpha(px, py, 2.0 * s, 2.0 * s, 62.0 * s, 62.0 * s, 14.0 * s),
+            );
             // Sidebar column.
-            blend(&mut c, [1.0, 1.0, 1.0], 0.92 * rounded_rect_alpha(px, py, 9.0 * s, 10.0 * s, 25.0 * s, 54.0 * s, 5.0 * s));
+            blend(
+                &mut c,
+                [1.0, 1.0, 1.0],
+                0.92 * rounded_rect_alpha(px, py, 9.0 * s, 10.0 * s, 25.0 * s, 54.0 * s, 5.0 * s),
+            );
             // Favourite dots.
             for cy in [17.0, 27.0] {
-                blend(&mut c, bg, rounded_rect_alpha(px, py, 13.0 * s, (cy - 4.0) * s, 21.0 * s, (cy + 4.0) * s, 4.0 * s));
+                blend(
+                    &mut c,
+                    bg,
+                    rounded_rect_alpha(
+                        px,
+                        py,
+                        13.0 * s,
+                        (cy - 4.0) * s,
+                        21.0 * s,
+                        (cy + 4.0) * s,
+                        4.0 * s,
+                    ),
+                );
             }
             // Stacked previews.
-            blend(&mut c, [1.0, 1.0, 1.0], 0.45 * rounded_rect_alpha(px, py, 32.0 * s, 20.0 * s, 54.0 * s, 36.0 * s, 4.0 * s));
-            blend(&mut c, [1.0, 1.0, 1.0], 0.95 * rounded_rect_alpha(px, py, 29.0 * s, 26.0 * s, 51.0 * s, 44.0 * s, 4.0 * s));
+            blend(
+                &mut c,
+                [1.0, 1.0, 1.0],
+                0.45 * rounded_rect_alpha(px, py, 32.0 * s, 20.0 * s, 54.0 * s, 36.0 * s, 4.0 * s),
+            );
+            blend(
+                &mut c,
+                [1.0, 1.0, 1.0],
+                0.95 * rounded_rect_alpha(px, py, 29.0 * s, 26.0 * s, 51.0 * s, 44.0 * s, 4.0 * s),
+            );
             pixels.extend(c.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
         }
     }

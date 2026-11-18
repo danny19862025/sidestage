@@ -22,7 +22,7 @@ use wayland_protocols_plasma::plasma_window_management::client::{
 
 use super::kwin_screenshot::KwinScreenshot;
 use super::AppResolver;
-use crate::{ThumbnailMode, WindowBackend, WindowEvent, Waker};
+use crate::{ThumbnailMode, Waker, WindowBackend, WindowEvent};
 
 const STATE_ACTIVE: u32 = 0x1;
 const STATE_MINIMIZED: u32 = 0x2;
@@ -64,16 +64,25 @@ impl WindowBackend for KdeBackend {
 /// Returns `true` if the compositor advertises the protocol we need.
 pub fn available(conn: &Connection) -> bool {
     match registry_queue_init::<Probe>(conn) {
-        Ok((globals, _)) => globals
-            .contents()
-            .with_list(|l| l.iter().any(|g| g.interface == OrgKdePlasmaWindowManagement::interface().name)),
+        Ok((globals, _)) => globals.contents().with_list(|l| {
+            l.iter()
+                .any(|g| g.interface == OrgKdePlasmaWindowManagement::interface().name)
+        }),
         Err(_) => false,
     }
 }
 
 struct Probe;
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Probe {
-    fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<KdeBackend> {
@@ -89,7 +98,8 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
     // Probe ScreenShot2 once; a refusal means icon-only previews.
     let shot = KwinScreenshot::new().ok();
     let thumbs = shot.is_some() && std::env::var_os("SIDESTAGE_NO_THUMBNAILS").is_none();
-    let (thumb_tx, thumb_handle) = spawn_thumbnailer(shot.filter(|_| thumbs), tx.clone(), waker.clone());
+    let (thumb_tx, thumb_handle) =
+        spawn_thumbnailer(shot.filter(|_| thumbs), tx.clone(), waker.clone());
 
     let mut state = State {
         tx: tx.clone(),
@@ -108,19 +118,25 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
     }));
     waker();
 
-    std::thread::Builder::new().name("kwin-wayland".into()).spawn(move || {
-        let _keep = thumb_handle;
-        if let Err(e) = run(conn, queue, &mut state, cmd_rx, wake_r) {
-            log::error!("KWin backend stopped: {e:#}");
-            let _ = state.tx.send(WindowEvent::Status(BackendStatus {
-                backend: "KWin (Wayland)".into(),
-                connected: false,
-                message: Some(format!("Lost connection to KWin: {e}")),
-            }));
-            (state.waker)();
-        }
-    })?;
-    Ok(KdeBackend { cmd: cmd_tx, wake: Mutex::new(wake_w), thumbs })
+    std::thread::Builder::new()
+        .name("kwin-wayland".into())
+        .spawn(move || {
+            let _keep = thumb_handle;
+            if let Err(e) = run(conn, queue, &mut state, cmd_rx, wake_r) {
+                log::error!("KWin backend stopped: {e:#}");
+                let _ = state.tx.send(WindowEvent::Status(BackendStatus {
+                    backend: "KWin (Wayland)".into(),
+                    connected: false,
+                    message: Some(format!("Lost connection to KWin: {e}")),
+                }));
+                (state.waker)();
+            }
+        })?;
+    Ok(KdeBackend {
+        cmd: cmd_tx,
+        wake: Mutex::new(wake_w),
+        thumbs,
+    })
 }
 
 fn spawn_thumbnailer(
@@ -128,7 +144,9 @@ fn spawn_thumbnailer(
     tx: Sender<WindowEvent>,
     waker: Waker,
 ) -> (Option<Sender<String>>, Option<std::thread::JoinHandle<()>>) {
-    let Some(shot) = shot else { return (None, None) };
+    let Some(shot) = shot else {
+        return (None, None);
+    };
     let (ttx, trx) = mpsc::channel::<String>();
     let h = std::thread::Builder::new()
         .name("kwin-thumbs".into())
@@ -144,7 +162,10 @@ fn spawn_thumbnailer(
                 for uuid in batch {
                     match shot.capture_window(&uuid, THUMB_MAX) {
                         Ok(img) => {
-                            let _ = tx.send(WindowEvent::Thumbnail { id: WindowId(uuid), image: Some(img) });
+                            let _ = tx.send(WindowEvent::Thumbnail {
+                                id: WindowId(uuid),
+                                image: Some(img),
+                            });
                             waker();
                         }
                         Err(e) => log::debug!("no preview for {uuid}: {e:#}"),
@@ -167,10 +188,20 @@ fn run(
     loop {
         queue.dispatch_pending(state)?;
         conn.flush()?;
-        let Some(guard) = queue.prepare_read() else { continue };
+        let Some(guard) = queue.prepare_read() else {
+            continue;
+        };
         let mut fds = [
-            libc::pollfd { fd: guard.connection_fd().as_raw_fd(), events: libc::POLLIN, revents: 0 },
-            libc::pollfd { fd: wake_r.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+            libc::pollfd {
+                fd: guard.connection_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
+            libc::pollfd {
+                fd: wake_r.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            },
         ];
         let n = unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) };
         if n < 0 {
@@ -193,7 +224,8 @@ fn run(
                     Command::Restore(uuid) => {
                         if let Some(w) = state.windows.get(&uuid) {
                             // Clear "minimized" and request "active" in one go.
-                            w.proxy.set_state(STATE_MINIMIZED | STATE_ACTIVE, STATE_ACTIVE);
+                            w.proxy
+                                .set_state(STATE_MINIMIZED | STATE_ACTIVE, STATE_ACTIVE);
                         }
                     }
                     Command::Thumbnail(uuid) => {
@@ -232,7 +264,9 @@ struct State {
 
 impl State {
     fn publish(&mut self, uuid: &str, was_minimized: bool) {
-        let Some(w) = self.windows.get(uuid) else { return };
+        let Some(w) = self.windows.get(uuid) else {
+            return;
+        };
         if !w.ready {
             return;
         }
@@ -244,14 +278,26 @@ impl State {
             }
             return;
         }
-        let key = if !w.app_id.is_empty() { w.app_id.clone() } else { w.resource_name.clone() };
+        let key = if !w.app_id.is_empty() {
+            w.app_id.clone()
+        } else {
+            w.resource_name.clone()
+        };
         let app = self.resolver.resolve(&key, Some(w.pid), &w.icon_name);
         let minimized = w.flags & STATE_MINIMIZED != 0;
         let info = WindowInfo {
             id: WindowId(uuid.into()),
-            app_key: if key.is_empty() { format!("pid:{}", w.pid) } else { key },
+            app_key: if key.is_empty() {
+                format!("pid:{}", w.pid)
+            } else {
+                key
+            },
             app_name: app.name,
-            title: if w.title.is_empty() { "Untitled window".into() } else { w.title.clone() },
+            title: if w.title.is_empty() {
+                "Untitled window".into()
+            } else {
+                w.title.clone()
+            },
             minimized,
             icon_hint: app.icon,
         };
@@ -267,7 +313,15 @@ impl State {
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
-    fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<OrgKdePlasmaWindowManagement, ()> for State {
@@ -311,7 +365,9 @@ impl Dispatch<OrgKdePlasmaWindow, String> for State {
         _: &QueueHandle<Self>,
     ) {
         use org_kde_plasma_window::Event as E;
-        let Some(w) = state.windows.get_mut(uuid) else { return };
+        let Some(w) = state.windows.get_mut(uuid) else {
+            return;
+        };
         let was_min = w.flags & STATE_MINIMIZED != 0;
         let mut changed = true;
         match event {

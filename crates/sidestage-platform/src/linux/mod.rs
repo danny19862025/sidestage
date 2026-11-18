@@ -30,7 +30,7 @@ use sidestage_core::desktop_entry::DesktopEntry;
 use sidestage_core::tracker::BackendStatus;
 use sidestage_core::{IconSource, LaunchTarget, RgbaImage};
 
-use crate::{ThumbnailMode, WindowBackend, WindowEvent, WindowId, Waker};
+use crate::{ThumbnailMode, Waker, WindowBackend, WindowEvent, WindowId};
 
 /// `XDG_CURRENT_DESKTOP` components, e.g. `["KDE"]` or `["ubuntu", "GNOME"]`.
 pub fn desktops() -> Vec<String> {
@@ -49,7 +49,12 @@ fn is_desktop(name: &str) -> bool {
 /// Wayland socket captured at startup (before the UI may hide it from winit).
 pub fn wayland_display() -> Option<String> {
     static WD: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    WD.get_or_init(|| std::env::var("WAYLAND_DISPLAY").ok().filter(|s| !s.is_empty())).clone()
+    WD.get_or_init(|| {
+        std::env::var("WAYLAND_DISPLAY")
+            .ok()
+            .filter(|s| !s.is_empty())
+    })
+    .clone()
 }
 
 fn wayland_connection() -> Option<wayland_client::Connection> {
@@ -166,28 +171,43 @@ pub(crate) struct AppResolver {
 
 impl AppResolver {
     pub fn new(tx: Sender<WindowEvent>, waker: Waker) -> Self {
-        Self { cache: HashMap::new(), tx, waker }
+        Self {
+            cache: HashMap::new(),
+            tx,
+            waker,
+        }
     }
 
     pub fn resolve(&mut self, app_key: &str, pid: Option<u32>, icon_hint: &str) -> ResolvedApp {
         if let Some((name, icon)) = self.cache.get(app_key) {
-            return ResolvedApp { name: name.clone(), icon: icon.clone() };
+            return ResolvedApp {
+                name: name.clone(),
+                icon: icon.clone(),
+            };
         }
-        let entry: Option<DesktopEntry> =
-            apps::find_for_app_id(app_key).or_else(|| pid.filter(|p| *p > 0).and_then(apps::find_for_pid));
-        let name = entry.as_ref().map(|e| e.name.clone()).unwrap_or_else(|| pretty_app_name(app_key));
+        let entry: Option<DesktopEntry> = apps::find_for_app_id(app_key)
+            .or_else(|| pid.filter(|p| *p > 0).and_then(apps::find_for_pid));
+        let name = entry
+            .as_ref()
+            .map(|e| e.name.clone())
+            .unwrap_or_else(|| pretty_app_name(app_key));
         let icon = entry
             .as_ref()
             .and_then(|e| e.icon.clone())
             .or_else(|| (!icon_hint.is_empty()).then(|| icon_hint.to_string()))
             .or_else(|| (!app_key.is_empty()).then(|| app_key.to_lowercase()));
-        self.cache.insert(app_key.to_string(), (name.clone(), icon.clone()));
+        self.cache
+            .insert(app_key.to_string(), (name.clone(), icon.clone()));
         if let Some(icon_name) = icon.clone() {
             let (tx, waker, key) = (self.tx.clone(), self.waker.clone(), app_key.to_string());
             std::thread::spawn(move || {
-                let img = icons::load_named(&icon_name, 64).or_else(|| icons::load_named("application-x-executable", 64));
+                let img = icons::load_named(&icon_name, 64)
+                    .or_else(|| icons::load_named("application-x-executable", 64));
                 if let Some(image) = img {
-                    let _ = tx.send(WindowEvent::Icon { app_key: key, image });
+                    let _ = tx.send(WindowEvent::Icon {
+                        app_key: key,
+                        image,
+                    });
                     waker();
                 }
             });
@@ -230,7 +250,10 @@ fn pretty_app_name(app_key: &str) -> String {
 fn spawn_detached(argv: &[String], cwd: Option<&str>) -> Result<()> {
     let (prog, args) = argv.split_first().ok_or_else(|| anyhow!("empty command"))?;
     let mut cmd = Command::new(prog);
-    cmd.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     if let Some(dir) = cwd.filter(|d| Path::new(d).is_dir()) {
         cmd.current_dir(dir);
     }
@@ -279,7 +302,9 @@ fn terminal_command() -> Option<Vec<String>> {
 }
 
 fn launch_entry(e: &DesktopEntry) -> Result<()> {
-    let mut argv = e.command_line().ok_or_else(|| anyhow!("{} has no usable Exec line", e.path.display()))?;
+    let mut argv = e
+        .command_line()
+        .ok_or_else(|| anyhow!("{} has no usable Exec line", e.path.display()))?;
     if e.terminal {
         let mut t = terminal_command().ok_or_else(|| anyhow!("no terminal emulator found"))?;
         t.append(&mut argv);
@@ -291,7 +316,8 @@ fn launch_entry(e: &DesktopEntry) -> Result<()> {
 pub fn launch(target: &LaunchTarget) -> Result<()> {
     match target {
         LaunchTarget::DesktopEntry { path } => {
-            let e = DesktopEntry::load(path, None).ok_or_else(|| anyhow!("cannot read {}", path.display()))?;
+            let e = DesktopEntry::load(path, None)
+                .ok_or_else(|| anyhow!("cannot read {}", path.display()))?;
             launch_entry(&e)
         }
         LaunchTarget::Path { path, args } => {
@@ -299,14 +325,19 @@ pub fn launch(target: &LaunchTarget) -> Result<()> {
                 bail!("{} no longer exists", path.display());
             }
             if path.extension().map(|e| e == "desktop").unwrap_or(false) {
-                let e = DesktopEntry::load(path, None).ok_or_else(|| anyhow!("cannot read {}", path.display()))?;
+                let e = DesktopEntry::load(path, None)
+                    .ok_or_else(|| anyhow!("cannot read {}", path.display()))?;
                 if e.kind == "Application" {
                     return launch_entry(&e);
                 }
                 return spawn_detached(&["xdg-open".into(), path.display().to_string()], None);
             }
             use std::os::unix::fs::PermissionsExt;
-            let exec = path.is_file() && path.metadata().map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false);
+            let exec = path.is_file()
+                && path
+                    .metadata()
+                    .map(|m| m.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false);
             if exec {
                 let mut argv = vec![path.display().to_string()];
                 argv.extend(args.iter().cloned());
@@ -332,23 +363,38 @@ pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Op
         IconSource::File { path } => icons::load_image_file(path, size),
         IconSource::Themed { name } => icons::load_named(name, size),
         IconSource::Auto => {
-            let from_entry = |p: &Path| DesktopEntry::load(p, None).and_then(|e| e.icon).and_then(|i| icons::load_named(&i, size));
+            let from_entry = |p: &Path| {
+                DesktopEntry::load(p, None)
+                    .and_then(|e| e.icon)
+                    .and_then(|i| icons::load_named(&i, size))
+            };
             let found = match target {
                 LaunchTarget::DesktopEntry { path } => from_entry(path),
                 LaunchTarget::Path { path, .. } => {
                     if path.extension().map(|e| e == "desktop").unwrap_or(false) {
                         from_entry(path)
-                    } else if let Some(stem) = path.file_stem().map(|s| s.to_string_lossy().to_lowercase()) {
+                    } else if let Some(stem) =
+                        path.file_stem().map(|s| s.to_string_lossy().to_lowercase())
+                    {
                         apps::find_for_app_id(&stem)
                             .and_then(|e| e.icon)
                             .and_then(|i| icons::load_named(&i, size))
-                            .or_else(|| if path.is_dir() { icons::load_named("folder", size) } else { None })
+                            .or_else(|| {
+                                if path.is_dir() {
+                                    icons::load_named("folder", size)
+                                } else {
+                                    None
+                                }
+                            })
                     } else {
                         None
                     }
                 }
                 LaunchTarget::Command { program, .. } => {
-                    let base = Path::new(program).file_name().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    let base = Path::new(program)
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_lowercase())
+                        .unwrap_or_default();
                     apps::find_for_app_id(&base)
                         .and_then(|e| e.icon)
                         .and_then(|i| icons::load_named(&i, size))
@@ -365,7 +411,9 @@ pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Op
 // Launch at login (XDG autostart)
 
 fn autostart_file() -> std::path::PathBuf {
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
     std::env::var_os("XDG_CONFIG_HOME")
         .filter(|v| !v.is_empty())
         .map(std::path::PathBuf::from)
@@ -384,7 +432,13 @@ pub fn set_launch_at_login(enabled: bool) -> Result<()> {
     }
     let exe = std::env::current_exe()?;
     std::fs::create_dir_all(file.parent().unwrap())?;
-    let quoted = format!("\"{}\"", exe.display().to_string().replace('\\', "\\\\").replace('"', "\\\""));
+    let quoted = format!(
+        "\"{}\"",
+        exe.display()
+            .to_string()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+    );
     std::fs::write(
         &file,
         format!(

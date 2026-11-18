@@ -14,12 +14,20 @@ impl std::fmt::Debug for RgbaImage {
 
 impl RgbaImage {
     pub fn new(width: u32, height: u32, pixels: Vec<u8>) -> Option<Self> {
-        (width > 0 && height > 0 && pixels.len() == (width * height * 4) as usize)
-            .then_some(Self { width, height, pixels })
+        (width > 0 && height > 0 && pixels.len() == (width * height * 4) as usize).then_some(Self {
+            width,
+            height,
+            pixels,
+        })
     }
 
     /// Converts premultiplied or straight BGRA (Win32/X11/Cairo order) to RGBA.
-    pub fn from_bgra(width: u32, height: u32, mut pixels: Vec<u8>, premultiplied: bool) -> Option<Self> {
+    pub fn from_bgra(
+        width: u32,
+        height: u32,
+        mut pixels: Vec<u8>,
+        premultiplied: bool,
+    ) -> Option<Self> {
         for px in pixels.as_chunks_mut::<4>().0 {
             px.swap(0, 2);
             if premultiplied && px[3] != 0 && px[3] != 255 {
@@ -67,7 +75,11 @@ impl RgbaImage {
                 }
             }
         }
-        RgbaImage { width: w, height: h, pixels: out }
+        RgbaImage {
+            width: w,
+            height: h,
+            pixels: out,
+        }
     }
 }
 

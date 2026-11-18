@@ -25,7 +25,9 @@ fn scan() -> Vec<DesktopEntry> {
         let root = base.join("applications");
         let mut stack = vec![root.clone()];
         while let Some(dir) = stack.pop() {
-            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
             for e in rd.flatten() {
                 let p = e.path();
                 if p.is_dir() {
@@ -36,7 +38,11 @@ fn scan() -> Vec<DesktopEntry> {
                     continue;
                 }
                 // Desktop-file ids replace '/' with '-' for subdirectories.
-                let rel = p.strip_prefix(&root).unwrap_or(&p).to_string_lossy().replace('/', "-");
+                let rel = p
+                    .strip_prefix(&root)
+                    .unwrap_or(&p)
+                    .to_string_lossy()
+                    .replace('/', "-");
                 let id = rel.trim_end_matches(".desktop").to_string();
                 if by_id.contains_key(&id) {
                     continue;
@@ -49,7 +55,10 @@ fn scan() -> Vec<DesktopEntry> {
             }
         }
     }
-    order.into_iter().filter_map(|id| by_id.remove(&id)).collect()
+    order
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect()
 }
 
 fn cache() -> &'static Mutex<Option<Arc<Vec<DesktopEntry>>>> {
@@ -77,8 +86,14 @@ fn to_app(e: &DesktopEntry) -> AppEntry {
     AppEntry {
         name: e.name.clone(),
         subtitle: e.generic_name.clone().or_else(|| e.comment.clone()),
-        target: LaunchTarget::DesktopEntry { path: e.path.clone() },
-        icon: e.icon.clone().map(|name| IconSource::Themed { name }).unwrap_or_default(),
+        target: LaunchTarget::DesktopEntry {
+            path: e.path.clone(),
+        },
+        icon: e
+            .icon
+            .clone()
+            .map(|name| IconSource::Themed { name })
+            .unwrap_or_default(),
         keywords,
     }
 }
@@ -86,7 +101,11 @@ fn to_app(e: &DesktopEntry) -> AppEntry {
 pub fn installed_apps() -> Vec<AppEntry> {
     refresh();
     let desktops = super::desktops();
-    let mut apps: Vec<AppEntry> = entries().iter().filter(|e| e.is_listable(&desktops)).map(to_app).collect();
+    let mut apps: Vec<AppEntry> = entries()
+        .iter()
+        .filter(|e| e.is_listable(&desktops))
+        .map(to_app)
+        .collect();
     apps.sort_by_key(|a| a.name.to_lowercase());
     apps
 }
@@ -100,8 +119,14 @@ pub fn from_path(path: &Path) -> Option<AppEntry> {
             return Some(AppEntry {
                 name: e.name.clone(),
                 subtitle: None,
-                target: LaunchTarget::Path { path: path.to_path_buf(), args: vec![] },
-                icon: e.icon.map(|name| IconSource::Themed { name }).unwrap_or_default(),
+                target: LaunchTarget::Path {
+                    path: path.to_path_buf(),
+                    args: vec![],
+                },
+                icon: e
+                    .icon
+                    .map(|name| IconSource::Themed { name })
+                    .unwrap_or_default(),
                 keywords: vec![],
             });
         }
@@ -114,7 +139,10 @@ pub fn from_path(path: &Path) -> Option<AppEntry> {
     Some(AppEntry {
         name,
         subtitle: Some(path.display().to_string()),
-        target: LaunchTarget::Path { path: path.to_path_buf(), args: vec![] },
+        target: LaunchTarget::Path {
+            path: path.to_path_buf(),
+            args: vec![],
+        },
         icon: IconSource::Auto,
         keywords: vec![],
     })
@@ -130,13 +158,25 @@ pub fn find_for_app_id(app_id: &str) -> Option<DesktopEntry> {
     let stripped = lower.trim_end_matches(".desktop");
     let by = |pred: &dyn Fn(&DesktopEntry) -> bool| all.iter().find(|e| pred(e)).cloned();
     by(&|e| e.id.to_lowercase() == stripped)
-        .or_else(|| by(&|e| e.startup_wm_class.as_deref().map(|c| c.to_lowercase() == stripped).unwrap_or(false)))
+        .or_else(|| {
+            by(&|e| {
+                e.startup_wm_class
+                    .as_deref()
+                    .map(|c| c.to_lowercase() == stripped)
+                    .unwrap_or(false)
+            })
+        })
         .or_else(|| by(&|e| e.id.to_lowercase().rsplit('.').next() == Some(stripped)))
         .or_else(|| {
             by(&|e| {
                 e.command_line()
                     .and_then(|argv| argv.first().cloned())
-                    .map(|p| Path::new(&p).file_name().map(|f| f.to_string_lossy().to_lowercase()) == Some(stripped.to_string()))
+                    .map(|p| {
+                        Path::new(&p)
+                            .file_name()
+                            .map(|f| f.to_string_lossy().to_lowercase())
+                            == Some(stripped.to_string())
+                    })
                     .unwrap_or(false)
             })
         })

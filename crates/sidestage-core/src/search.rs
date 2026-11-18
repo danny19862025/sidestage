@@ -32,7 +32,11 @@ fn term_score(term: &str, text: &str) -> Option<u32> {
 
 /// Best score over several fields (name, then keywords with a penalty).
 pub fn score_fields(query: &str, name: &str, extra: &[&str]) -> Option<u32> {
-    let best_extra = extra.iter().filter_map(|e| score(query, e)).max().map(|s| s / 2);
+    let best_extra = extra
+        .iter()
+        .filter_map(|e| score(query, e))
+        .max()
+        .map(|s| s / 2);
     match (score(query, name), best_extra) {
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
@@ -46,10 +50,16 @@ mod tests {
     #[test]
     fn ranking() {
         assert!(score("fire", "Firefox").unwrap() > score("fox", "Firefox").unwrap());
-        assert!(score("code", "Visual Studio Code").unwrap() > score("vsc", "Visual Studio Code").unwrap());
+        assert!(
+            score("code", "Visual Studio Code").unwrap()
+                > score("vsc", "Visual Studio Code").unwrap()
+        );
         assert_eq!(score("zzz", "Firefox"), None);
         assert!(score("vis code", "Visual Studio Code").is_some());
         assert!(score("", "anything").is_some());
-        assert_eq!(score_fields("browser", "Firefox", &["Web Browser"]), Some(40));
+        assert_eq!(
+            score_fields("browser", "Firefox", &["Web Browser"]),
+            Some(40)
+        );
     }
 }

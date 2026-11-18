@@ -100,8 +100,15 @@ impl SidestageApp {
 
         let (tx, events) = mpsc::channel();
         let wake_ctx = ctx.clone();
-        let backend = sidestage_platform::start_window_backend(tx, Arc::new(move || wake_ctx.request_repaint()));
-        log::info!("window backend: {} ({:?})", backend.name(), backend.thumbnail_mode());
+        let backend = sidestage_platform::start_window_backend(
+            tx,
+            Arc::new(move || wake_ctx.request_repaint()),
+        );
+        log::info!(
+            "window backend: {} ({:?})",
+            backend.name(),
+            backend.thumbnail_mode()
+        );
         let thumbnail_mode = backend.thumbnail_mode();
 
         // Poll the desktop colour scheme in the background (D-Bus/registry).
@@ -192,11 +199,17 @@ impl SidestageApp {
     }
 
     pub fn toast(&mut self, text: impl Into<String>, error: bool) {
-        self.toast = Some(Toast { text: text.into(), error, until: Instant::now() + Duration::from_secs(if error { 6 } else { 3 }) });
+        self.toast = Some(Toast {
+            text: text.into(),
+            error,
+            until: Instant::now() + Duration::from_secs(if error { 6 } else { 3 }),
+        });
     }
 
     pub fn launch(&mut self, favourite_id: &str) {
-        let Some(fav) = self.config.favourite(favourite_id).cloned() else { return };
+        let Some(fav) = self.config.favourite(favourite_id).cloned() else {
+            return;
+        };
         log::info!("launching {} ({:?})", fav.name, fav.target);
         match sidestage_platform::launch::launch(&fav.target) {
             Ok(()) => {
@@ -226,8 +239,12 @@ impl SidestageApp {
     fn drain_events(&mut self, ctx: &egui::Context) {
         while let Ok(ev) = self.events.try_recv() {
             match &ev {
-                WindowEvent::Icon { app_key, image } => self.textures.set_app_icon(ctx, app_key, image),
-                WindowEvent::Thumbnail { id, image } => self.textures.set_thumbnail(ctx, id, image.as_ref()),
+                WindowEvent::Icon { app_key, image } => {
+                    self.textures.set_app_icon(ctx, app_key, image)
+                }
+                WindowEvent::Thumbnail { id, image } => {
+                    self.textures.set_thumbnail(ctx, id, image.as_ref())
+                }
                 WindowEvent::Status(s) => {
                     log::info!("backend status: {s:?}");
                     self.status = Some(s.clone());
@@ -246,13 +263,16 @@ impl SidestageApp {
             self.groups_gen = self.tracker.generation();
             self.groups = self.tracker.groups();
             let tracker = &self.tracker;
-            self.textures.retain_thumbnails(|id| tracker.get(id).map(|w| w.minimized).unwrap_or(false));
+            self.textures
+                .retain_thumbnails(|id| tracker.get(id).map(|w| w.minimized).unwrap_or(false));
             let keys: HashSet<&str> = self.groups.iter().map(|g| g.app_key.as_str()).collect();
             self.expanded_groups.retain(|k| keys.contains(k.as_str()));
         }
         // A restore that did not happen within 4s is shown normally again.
-        self.pending_restore.retain(|_, t| t.elapsed() < Duration::from_secs(4));
-        self.launched.retain(|_, t| t.elapsed() < Duration::from_millis(900));
+        self.pending_restore
+            .retain(|_, t| t.elapsed() < Duration::from_secs(4));
+        self.launched
+            .retain(|_, t| t.elapsed() < Duration::from_millis(900));
     }
 
     /// Commands from another source (second instance launch).
@@ -269,7 +289,10 @@ impl SidestageApp {
             match cmd {
                 TrayCommand::Settings => {
                     self.settings_open = true;
-                    ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
+                    ctx.send_viewport_cmd_to(
+                        crate::settings::viewport_id(),
+                        egui::ViewportCommand::Focus,
+                    );
                 }
                 TrayCommand::ToggleSidebar => {
                     self.visible = !self.visible;
@@ -296,7 +319,12 @@ impl SidestageApp {
     }
 
     pub fn target_monitor(&self) -> Option<&MonitorInfo> {
-        let primary = || self.monitors.iter().find(|m| m.primary).or(self.monitors.first());
+        let primary = || {
+            self.monitors
+                .iter()
+                .find(|m| m.primary)
+                .or(self.monitors.first())
+        };
         match &self.config.settings.monitor {
             MonitorChoice::Primary => primary(),
             MonitorChoice::Named { name, index } => self
@@ -316,7 +344,10 @@ impl SidestageApp {
     fn update_autohide(&mut self, ctx: &egui::Context) {
         let s = &self.config.settings;
         if !s.auto_hide {
-            self.autohide = AutoHide { shown: true, ..Default::default() };
+            self.autohide = AutoHide {
+                shown: true,
+                ..Default::default()
+            };
             return;
         }
         let toolkit_hover = ctx.input(|i| i.pointer.hover_pos().is_some());
@@ -325,7 +356,10 @@ impl SidestageApp {
         // the panel's own Enter/Leave tracking wins when it has an answer.
         let platform_hover = self.panel.as_mut().and_then(|p| p.pointer_inside());
         let hovering = files || platform_hover.unwrap_or(toolkit_hover);
-        let busy = self.keyboard_wanted || self.menu_open || ctx.dragged_id().is_some() || self.renaming_section.is_some();
+        let busy = self.keyboard_wanted
+            || self.menu_open
+            || ctx.dragged_id().is_some()
+            || self.renaming_section.is_some();
         let now = Instant::now();
         log::trace!(
             "autohide hovering={hovering} platform={platform_hover:?} pos={:?} busy={busy} (kbd={} menu={} drag={}) shown={}",
@@ -365,7 +399,11 @@ impl SidestageApp {
 
     /// Reveal progress 0..1, animated.
     pub fn reveal(&self, ctx: &egui::Context) -> f32 {
-        let anim = if self.config.settings.animations { 0.18 } else { 0.0 };
+        let anim = if self.config.settings.animations {
+            0.18
+        } else {
+            0.0
+        };
         ctx.animate_bool_with_time(egui::Id::unique("reveal"), self.wants_shown(), anim)
     }
 
@@ -393,20 +431,39 @@ impl SidestageApp {
             }
             return;
         };
-        self.scale = if mon.scale > 0.0 { mon.scale } else { ctx.native_pixels_per_point().unwrap_or(1.0) };
+        self.scale = if mon.scale > 0.0 {
+            mon.scale
+        } else {
+            ctx.native_pixels_per_point().unwrap_or(1.0)
+        };
         let s = &self.config.settings;
         let full_w = ((s.width + OUTER_MARGIN) * self.scale).round() as i32;
         let reveal = self.reveal(ctx);
         let collapsed = s.auto_hide && reveal <= 0.001 && !self.autohide.shown;
         let w = full_w;
-        let collapsed_strip = collapsed.then(|| (HIDDEN_STRIP * self.scale).round().max(2.0) as i32);
+        let collapsed_strip =
+            collapsed.then(|| (HIDDEN_STRIP * self.scale).round().max(2.0) as i32);
         let (_, wy, _, wh) = mon.work;
         let x = match s.edge {
             Edge::Left => mon.x,
             Edge::Right => mon.x + mon.width - w,
         };
-        let reserve = if s.auto_hide || !s.reserve_space { 0 } else { full_w };
-        let geometry = PanelGeometry { monitor: mon, edge: s.edge, x, y: wy, width: w, height: wh, reserve, collapsed_strip, auto_hide: s.auto_hide };
+        let reserve = if s.auto_hide || !s.reserve_space {
+            0
+        } else {
+            full_w
+        };
+        let geometry = PanelGeometry {
+            monitor: mon,
+            edge: s.edge,
+            x,
+            y: wy,
+            width: w,
+            height: wh,
+            reserve,
+            collapsed_strip,
+            auto_hide: s.auto_hide,
+        };
         if let Some(p) = self.panel.as_mut() {
             if self.last_geometry.as_ref() != Some(&geometry) {
                 log::debug!("panel geometry {geometry:?}");

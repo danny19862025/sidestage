@@ -6,17 +6,24 @@ use sidestage_core::RgbaImage;
 use windows::core::HSTRING;
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{
-    DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-    DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
+    DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER,
+    BI_RGB, DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
 };
-use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY};
+use windows::Win32::UI::Shell::{
+    IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+};
 use windows::Win32::UI::WindowsAndMessaging::{GetIconInfo, HICON, ICONINFO};
 
 /// Reads a 32-bit top-down copy of a bitmap. Returns premultiplied BGRA.
 pub(crate) fn bitmap_pixels(hbm: HBITMAP) -> Option<(u32, u32, Vec<u8>)> {
     unsafe {
         let mut bm = BITMAP::default();
-        if GetObjectW(HGDIOBJ(hbm.0), std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut _)) == 0 {
+        if GetObjectW(
+            HGDIOBJ(hbm.0),
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut bm as *mut _ as *mut _),
+        ) == 0
+        {
             return None;
         }
         let (w, h) = (bm.bmWidth, bm.bmHeight.abs());
@@ -37,7 +44,15 @@ pub(crate) fn bitmap_pixels(hbm: HBITMAP) -> Option<(u32, u32, Vec<u8>)> {
         };
         let mut px = vec![0u8; (w * h * 4) as usize];
         let dc = GetDC(None);
-        let lines = GetDIBits(dc, hbm, 0, h as u32, Some(px.as_mut_ptr() as *mut _), &mut info, DIB_RGB_COLORS);
+        let lines = GetDIBits(
+            dc,
+            hbm,
+            0,
+            h as u32,
+            Some(px.as_mut_ptr() as *mut _),
+            &mut info,
+            DIB_RGB_COLORS,
+        );
         ReleaseDC(None, dc);
         (lines == h).then_some((w as u32, h as u32, px))
     }
@@ -59,7 +74,11 @@ pub(crate) fn hicon_to_rgba(icon: HICON) -> Option<RgbaImage> {
                 for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                     let (x, y) = (i as u32 % w, i as u32 / w);
                     let mi = ((y * mw + x) * 4) as usize;
-                    p[3] = if m.get(mi).copied().unwrap_or(0) == 0 { 255 } else { 0 };
+                    p[3] = if m.get(mi).copied().unwrap_or(0) == 0 {
+                        255
+                    } else {
+                        0
+                    };
                 }
             }
             return RgbaImage::from_bgra(w, h, px, false);
@@ -71,9 +90,12 @@ pub(crate) fn hicon_to_rgba(icon: HICON) -> Option<RgbaImage> {
 /// Icon for a file, folder, shortcut or `shell:AppsFolder\…` item.
 pub fn shell_icon(parsing_name: &str, size: u32) -> Option<RgbaImage> {
     unsafe {
-        let factory: IShellItemImageFactory = SHCreateItemFromParsingName(&HSTRING::from(parsing_name), None).ok()?;
+        let factory: IShellItemImageFactory =
+            SHCreateItemFromParsingName(&HSTRING::from(parsing_name), None).ok()?;
         let s = size.clamp(16, 256) as i32;
-        let hbm = factory.GetImage(SIZE { cx: s, cy: s }, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK).ok()?;
+        let hbm = factory
+            .GetImage(SIZE { cx: s, cy: s }, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK)
+            .ok()?;
         let out = bitmap_pixels(hbm);
         let _ = DeleteObject(HGDIOBJ(hbm.0));
         let (w, h, px) = out?;

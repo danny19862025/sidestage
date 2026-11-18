@@ -43,7 +43,8 @@ impl DesktopEntry {
                 continue;
             }
             if let Some((k, v)) = line.split_once('=') {
-                raw.entry(k.trim().to_string()).or_insert_with(|| v.trim().to_string());
+                raw.entry(k.trim().to_string())
+                    .or_insert_with(|| v.trim().to_string());
             }
         }
         let get = |key: &str| -> Option<String> {
@@ -58,14 +59,27 @@ impl DesktopEntry {
         };
         let list = |key: &str| -> Vec<String> {
             get(key)
-                .map(|v| v.split(';').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect())
+                .map(|v| {
+                    v.split(';')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect()
+                })
                 .unwrap_or_default()
         };
-        let flag = |key: &str| raw.get(key).map(|v| v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        let flag = |key: &str| {
+            raw.get(key)
+                .map(|v| v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+        };
         let name = get("Name")?;
         Some(DesktopEntry {
             path: path.to_path_buf(),
-            id: path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            id: path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default(),
             name,
             generic_name: get("GenericName"),
             comment: get("Comment"),
@@ -95,7 +109,10 @@ impl DesktopEntry {
         if self.kind != "Application" || self.no_display || self.hidden || self.exec.is_none() {
             return false;
         }
-        let hit = |list: &[String]| list.iter().any(|d| desktops.iter().any(|c| c.eq_ignore_ascii_case(d)));
+        let hit = |list: &[String]| {
+            list.iter()
+                .any(|d| desktops.iter().any(|c| c.eq_ignore_ascii_case(d)))
+        };
         if !self.only_show_in.is_empty() && !hit(&self.only_show_in) {
             return false;
         }
@@ -105,7 +122,12 @@ impl DesktopEntry {
     /// Expands `Exec` into argv with no file arguments.
     pub fn command_line(&self) -> Option<Vec<String>> {
         let exec = self.exec.as_deref()?;
-        let argv = expand_exec(exec, self.icon.as_deref(), &self.name, &self.path.to_string_lossy())?;
+        let argv = expand_exec(
+            exec,
+            self.icon.as_deref(),
+            &self.name,
+            &self.path.to_string_lossy(),
+        )?;
         (!argv.is_empty()).then_some(argv)
     }
 }
@@ -163,7 +185,12 @@ fn unescape(v: &str) -> String {
 /// Splits an `Exec` value into argv following the spec's quoting rules and
 /// expands field codes. File/URL codes are dropped because favourites launch
 /// without arguments. Returns `None` for malformed quoting.
-pub fn expand_exec(exec: &str, icon: Option<&str>, name: &str, location: &str) -> Option<Vec<String>> {
+pub fn expand_exec(
+    exec: &str,
+    icon: Option<&str>,
+    name: &str,
+    location: &str,
+) -> Option<Vec<String>> {
     // The value was not passed through `unescape` above; the general escape
     // rules apply first, then the quoting rules.
     let exec = unescape(exec);
@@ -243,7 +270,12 @@ mod tests {
 
     #[test]
     fn parses_main_group_only() {
-        let e = DesktopEntry::parse(Path::new("/a/org.kde.konsole.desktop"), KONSOLE, Some("de_DE.UTF-8")).unwrap();
+        let e = DesktopEntry::parse(
+            Path::new("/a/org.kde.konsole.desktop"),
+            KONSOLE,
+            Some("de_DE.UTF-8"),
+        )
+        .unwrap();
         assert_eq!(e.id, "org.kde.konsole");
         assert_eq!(e.name, "Konsole DE");
         assert_eq!(e.exec.as_deref(), Some("konsole %U"));
@@ -254,11 +286,33 @@ mod tests {
 
     #[test]
     fn exec_quoting_and_field_codes() {
-        let argv = expand_exec(r#""/opt/My App/run" --name=%c %i "a \"q\"" 100%% %F"#, Some("ic"), "N", "/x").unwrap();
-        assert_eq!(argv, ["/opt/My App/run", "--name=N", "--icon", "ic", "a \"q\"", "100%"]);
+        let argv = expand_exec(
+            r#""/opt/My App/run" --name=%c %i "a \"q\"" 100%% %F"#,
+            Some("ic"),
+            "N",
+            "/x",
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "/opt/My App/run",
+                "--name=N",
+                "--icon",
+                "ic",
+                "a \"q\"",
+                "100%"
+            ]
+        );
         assert_eq!(expand_exec("\"broken", None, "", ""), None);
-        assert_eq!(expand_exec("env  FOO=1   app", None, "", "").unwrap(), ["env", "FOO=1", "app"]);
-        assert_eq!(expand_exec(r#"sh -c "echo \\$HOME""#, None, "", "").unwrap(), ["sh", "-c", "echo $HOME"]);
+        assert_eq!(
+            expand_exec("env  FOO=1   app", None, "", "").unwrap(),
+            ["env", "FOO=1", "app"]
+        );
+        assert_eq!(
+            expand_exec(r#"sh -c "echo \\$HOME""#, None, "", "").unwrap(),
+            ["sh", "-c", "echo $HOME"]
+        );
     }
 
     #[test]

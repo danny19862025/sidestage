@@ -10,21 +10,25 @@ use sidestage_core::WindowId;
 use windows::core::{BOOL, HSTRING};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DwmQueryThumbnailSourceSize, DwmRegisterThumbnail, DwmSetWindowAttribute, DwmUnregisterThumbnail,
-    DwmUpdateThumbnailProperties, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWM_THUMBNAIL_PROPERTIES,
-    DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION, DWM_TNP_RECTSOURCE, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
+    DwmQueryThumbnailSourceSize, DwmRegisterThumbnail, DwmSetWindowAttribute,
+    DwmUnregisterThumbnail, DwmUpdateThumbnailProperties, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DWMWCP_DONOTROUND, DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION,
+    DWM_TNP_RECTSOURCE, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
 };
-use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW};
+use windows::Win32::Graphics::Gdi::{
+    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
+};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Shell::{
-    DefSubclassProc, SHAppBarMessage, SetWindowSubclass, ABE_LEFT, ABE_RIGHT, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE,
-    ABM_SETPOS, ABN_POSCHANGED, APPBARDATA,
+    DefSubclassProc, SHAppBarMessage, SetWindowSubclass, ABE_LEFT, ABE_RIGHT, ABM_NEW,
+    ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, ABN_POSCHANGED, APPBARDATA,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, GetWindowPlacement, IsIconic, PostMessageW, RegisterWindowMessageW, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_BROADCAST, HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_USER, WS_EX_APPWINDOW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    GetWindowLongPtrW, GetWindowPlacement, IsIconic, PostMessageW, RegisterWindowMessageW,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_BROADCAST,
+    HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_USER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
 use crate::panel::{Edge, LiveThumbnails, MonitorInfo, PanelGeometry};
@@ -51,7 +55,11 @@ fn instance_callback() -> &'static Mutex<Option<Callback>> {
 /// Called by a second instance: asks the running one to open Settings
 /// (or to quit).
 pub fn signal_running_instance(quit: bool) {
-    let msg = if quit { quit_message() } else { instance_message() };
+    let msg = if quit {
+        quit_message()
+    } else {
+        instance_message()
+    };
     unsafe {
         let _ = PostMessageW(Some(HWND_BROADCAST), msg, WPARAM(0), LPARAM(0));
     }
@@ -65,7 +73,14 @@ pub fn on_instance_signal(cb: Callback) {
 static KEYBOARD_WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static APPBAR_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-unsafe extern "system" fn subclass_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _id: usize, _data: usize) -> LRESULT {
+unsafe extern "system" fn subclass_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
     if msg == WM_MOUSEACTIVATE && !KEYBOARD_WANTED.load(std::sync::atomic::Ordering::Relaxed) {
         // Clicks on the sidebar must not take focus from the user's window.
         return LRESULT(MA_NOACTIVATE as isize);
@@ -89,18 +104,29 @@ pub fn monitors() -> Vec<MonitorInfo> {
         BOOL(1)
     }
     unsafe {
-        let _ = EnumDisplayMonitors(None, None, Some(cb), LPARAM(&mut handles as *mut _ as isize));
+        let _ = EnumDisplayMonitors(
+            None,
+            None,
+            Some(cb),
+            LPARAM(&mut handles as *mut _ as isize),
+        );
     }
     let mut out = Vec::new();
     for (index, h) in handles.into_iter().enumerate() {
         let mut info = MONITORINFOEXW::default();
         info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
-        if !unsafe { GetMonitorInfoW(h, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO) }.as_bool() {
+        if !unsafe { GetMonitorInfoW(h, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO) }
+            .as_bool()
+        {
             continue;
         }
         let (mut dx, mut dy) = (96u32, 96u32);
         let _ = unsafe { GetDpiForMonitor(h, MDT_EFFECTIVE_DPI, &mut dx, &mut dy) };
-        let name_len = info.szDevice.iter().position(|c| *c == 0).unwrap_or(info.szDevice.len());
+        let name_len = info
+            .szDevice
+            .iter()
+            .position(|c| *c == 0)
+            .unwrap_or(info.szDevice.len());
         let r = info.monitorInfo.rcMonitor;
         let w = info.monitorInfo.rcWork;
         out.push(MonitorInfo {
@@ -127,23 +153,53 @@ pub struct Panel {
 
 impl Panel {
     pub fn attach(handle: RawWindowHandle) -> Result<Panel> {
-        let RawWindowHandle::Win32(h) = handle else { return Err(anyhow!("not a Win32 window")) };
+        let RawWindowHandle::Win32(h) = handle else {
+            return Err(anyhow!("not a Win32 window"));
+        };
         let hwnd = HWND(h.hwnd.get() as *mut _);
         unsafe {
             let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-            let ex = (ex | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_TOPMOST.0) & !WS_EX_APPWINDOW.0;
+            let ex = (ex | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_TOPMOST.0)
+                & !WS_EX_APPWINDOW.0;
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
-            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            let _ = SetWindowPos(
+                hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
             // We draw our own rounded card; stop Windows 11 rounding the window.
             let pref = DWMWCP_DONOTROUND;
-            let _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref as *const _ as *const _, 4);
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &pref as *const _ as *const _,
+                4,
+            );
             let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 0x5151, 0);
         }
-        Ok(Panel { hwnd, last: None, appbar: false, thumbs: DwmThumbs { dest: hwnd, map: HashMap::new(), used: HashSet::new() } })
+        Ok(Panel {
+            hwnd,
+            last: None,
+            appbar: false,
+            thumbs: DwmThumbs {
+                dest: hwnd,
+                map: HashMap::new(),
+                used: HashSet::new(),
+            },
+        })
     }
 
     fn appbar_data(&self) -> APPBARDATA {
-        APPBARDATA { cbSize: std::mem::size_of::<APPBARDATA>() as u32, hWnd: self.hwnd, uCallbackMessage: APPBAR_CALLBACK, ..Default::default() }
+        APPBARDATA {
+            cbSize: std::mem::size_of::<APPBARDATA>() as u32,
+            hWnd: self.hwnd,
+            uCallbackMessage: APPBAR_CALLBACK,
+            ..Default::default()
+        }
     }
 
     pub fn apply(&mut self, g: &PanelGeometry) {
@@ -168,8 +224,17 @@ impl Panel {
                     self.appbar = true;
                 }
                 let m = &g.monitor;
-                abd.uEdge = if g.edge == Edge::Left { ABE_LEFT } else { ABE_RIGHT };
-                abd.rc = RECT { left: m.x, top: m.y, right: m.x + m.width, bottom: m.y + m.height };
+                abd.uEdge = if g.edge == Edge::Left {
+                    ABE_LEFT
+                } else {
+                    ABE_RIGHT
+                };
+                abd.rc = RECT {
+                    left: m.x,
+                    top: m.y,
+                    right: m.x + m.width,
+                    bottom: m.y + m.height,
+                };
                 if g.edge == Edge::Left {
                     abd.rc.right = abd.rc.left + g.reserve;
                 } else {
@@ -198,7 +263,11 @@ impl Panel {
         KEYBOARD_WANTED.store(wanted, std::sync::atomic::Ordering::Relaxed);
         unsafe {
             let ex = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
-            let ex = if wanted { ex & !WS_EX_NOACTIVATE.0 } else { ex | WS_EX_NOACTIVATE.0 };
+            let ex = if wanted {
+                ex & !WS_EX_NOACTIVATE.0
+            } else {
+                ex | WS_EX_NOACTIVATE.0
+            };
             SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, ex as isize);
             if wanted {
                 let _ = SetForegroundWindow(self.hwnd);
@@ -251,7 +320,10 @@ impl DwmThumbs {
     fn source_size(&self, src: HWND, thumb: isize) -> Option<(i32, i32)> {
         unsafe {
             if IsIconic(src).as_bool() {
-                let mut wp = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+                let mut wp = WINDOWPLACEMENT {
+                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                    ..Default::default()
+                };
                 if GetWindowPlacement(src, &mut wp).is_ok() {
                     let r = wp.rcNormalPosition;
                     if r.right > r.left && r.bottom > r.top {
@@ -287,8 +359,18 @@ impl LiveThumbnails for DwmThumbs {
         let (fw, fh) = ((sw as f32 * scale) as i32, (sh as f32 * scale) as i32);
         let fx = dest[0] + (dest[2] - fw) / 2;
         let fy = dest[1] + (dest[3] - fh) / 2;
-        let full = RECT { left: fx, top: fy, right: fx + fw, bottom: fy + fh };
-        let clipr = RECT { left: clip[0], top: clip[1], right: clip[0] + clip[2], bottom: clip[1] + clip[3] };
+        let full = RECT {
+            left: fx,
+            top: fy,
+            right: fx + fw,
+            bottom: fy + fh,
+        };
+        let clipr = RECT {
+            left: clip[0],
+            top: clip[1],
+            right: clip[0] + clip[2],
+            bottom: clip[1] + clip[3],
+        };
         let vis = RECT {
             left: full.left.max(clipr.left),
             top: full.top.max(clipr.top),
@@ -297,7 +379,9 @@ impl LiveThumbnails for DwmThumbs {
         };
         let visible = vis.right > vis.left && vis.bottom > vis.top;
         // Crop the source in proportion to what the scroll area clips.
-        let to_src = |v: i32, origin: i32, len: i32, slen: i32| ((v - origin) as f32 / len.max(1) as f32 * slen as f32) as i32;
+        let to_src = |v: i32, origin: i32, len: i32, slen: i32| {
+            ((v - origin) as f32 / len.max(1) as f32 * slen as f32) as i32
+        };
         let src_rect = RECT {
             left: to_src(vis.left, full.left, fw, sw),
             top: to_src(vis.top, full.top, fh, sh),
@@ -305,7 +389,11 @@ impl LiveThumbnails for DwmThumbs {
             bottom: to_src(vis.bottom, full.top, fh, sh),
         };
         let props = DWM_THUMBNAIL_PROPERTIES {
-            dwFlags: DWM_TNP_RECTDESTINATION | DWM_TNP_RECTSOURCE | DWM_TNP_VISIBLE | DWM_TNP_OPACITY | DWM_TNP_SOURCECLIENTAREAONLY,
+            dwFlags: DWM_TNP_RECTDESTINATION
+                | DWM_TNP_RECTSOURCE
+                | DWM_TNP_VISIBLE
+                | DWM_TNP_OPACITY
+                | DWM_TNP_SOURCECLIENTAREAONLY,
             rcDestination: vis,
             rcSource: src_rect,
             opacity: 255,
@@ -318,7 +406,11 @@ impl LiveThumbnails for DwmThumbs {
 
     fn hide_all(&mut self) {
         for t in self.map.values() {
-            let props = DWM_THUMBNAIL_PROPERTIES { dwFlags: DWM_TNP_VISIBLE, fVisible: false.into(), ..Default::default() };
+            let props = DWM_THUMBNAIL_PROPERTIES {
+                dwFlags: DWM_TNP_VISIBLE,
+                fVisible: false.into(),
+                ..Default::default()
+            };
             unsafe {
                 let _ = DwmUpdateThumbnailProperties(*t, &props);
             }
@@ -326,7 +418,12 @@ impl LiveThumbnails for DwmThumbs {
     }
 
     fn end(&mut self) {
-        let stale: Vec<WindowId> = self.map.keys().filter(|k| !self.used.contains(*k)).cloned().collect();
+        let stale: Vec<WindowId> = self
+            .map
+            .keys()
+            .filter(|k| !self.used.contains(*k))
+            .cloned()
+            .collect();
         for k in stale {
             if let Some(t) = self.map.remove(&k) {
                 unsafe {

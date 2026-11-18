@@ -41,7 +41,9 @@ fn current_theme() -> Option<String> {
     let kde = desktops.iter().any(|d| d.eq_ignore_ascii_case("KDE"));
     if kde {
         let home = std::env::var_os("HOME").map(PathBuf::from)?;
-        let cfg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or(home.join(".config"));
+        let cfg = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or(home.join(".config"));
         if let Ok(text) = std::fs::read_to_string(cfg.join("kdeglobals")) {
             let mut in_icons = false;
             for line in text.lines() {
@@ -61,7 +63,10 @@ fn current_theme() -> Option<String> {
         .args(["get", "org.gnome.desktop.interface", "icon-theme"])
         .output()
         .ok()?;
-    let v = String::from_utf8_lossy(&out.stdout).trim().trim_matches('\'').to_string();
+    let v = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .trim_matches('\'')
+        .to_string();
     (!v.is_empty()).then_some(v)
 }
 
@@ -82,7 +87,11 @@ fn inherits(theme: &str) -> Vec<String> {
         if let Ok(text) = std::fs::read_to_string(d.join("index.theme")) {
             for line in text.lines() {
                 if let Some(v) = line.trim().strip_prefix("Inherits=") {
-                    return v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                    return v
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
                 }
             }
         }
@@ -147,7 +156,9 @@ fn index_theme(theme: &str) -> ThemeIndex {
     for root in theme_dirs(theme) {
         let mut stack = vec![(root, 0)];
         while let Some((dir, depth)) = stack.pop() {
-            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
             for entry in rd.flatten() {
                 let p = entry.path();
                 let ft = match entry.file_type() {
@@ -165,12 +176,18 @@ fn index_theme(theme: &str) -> ThemeIndex {
                     continue;
                 }
                 // Prefer full-colour app icons; skip symbolic variants.
-                let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                let stem = p
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 if stem.ends_with("-symbolic") {
                     continue;
                 }
                 let size = size_from_path(&p);
-                index.entry(stem).or_default().push(Candidate { path: p, size });
+                index
+                    .entry(stem)
+                    .or_default()
+                    .push(Candidate { path: p, size });
             }
         }
     }
@@ -195,7 +212,10 @@ pub fn find_icon_file(name: &str, size: u32) -> Option<PathBuf> {
         return p.is_file().then(|| p.to_path_buf());
     }
     // Some entries wrongly include an extension.
-    let name = name.strip_suffix(".png").or_else(|| name.strip_suffix(".svg")).unwrap_or(name);
+    let name = name
+        .strip_suffix(".png")
+        .or_else(|| name.strip_suffix(".svg"))
+        .unwrap_or(name);
     for theme in theme_chain() {
         let idx = theme_index(theme);
         if let Some(cands) = idx.get(name) {
@@ -226,7 +246,11 @@ pub fn find_icon_file(name: &str, size: u32) -> Option<PathBuf> {
 
 /// Loads a PNG/JPEG/ICO/SVG file, rasterising SVGs at `size` pixels.
 pub fn load_image_file(path: &Path, size: u32) -> Option<RgbaImage> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if ext == "svg" || ext == "svgz" {
         return render_svg(path, size);
     }
@@ -237,14 +261,21 @@ pub fn load_image_file(path: &Path, size: u32) -> Option<RgbaImage> {
 
 fn render_svg(path: &Path, size: u32) -> Option<RgbaImage> {
     let data = std::fs::read(path).ok()?;
-    let opts = resvg::usvg::Options { resources_dir: path.parent().map(Path::to_path_buf), ..Default::default() };
+    let opts = resvg::usvg::Options {
+        resources_dir: path.parent().map(Path::to_path_buf),
+        ..Default::default()
+    };
     let tree = resvg::usvg::Tree::from_data(&data, &opts).ok()?;
     let ts = tree.size();
     let scale = size as f32 / ts.width().max(ts.height()).max(1.0);
     let w = ((ts.width() * scale).round() as u32).max(1);
     let h = ((ts.height() * scale).round() as u32).max(1);
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h)?;
-    resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
     // tiny-skia stores premultiplied RGBA.
     let mut px = pixmap.take();
     for p in px.as_chunks_mut::<4>().0 {
@@ -271,7 +302,13 @@ mod tests {
     fn size_parsing() {
         assert_eq!(size_from_path(Path::new("/i/hicolor/48x48/apps/a.png")), 48);
         assert_eq!(size_from_path(Path::new("/i/breeze/apps/48/a.svg")), 48);
-        assert_eq!(size_from_path(Path::new("/i/hicolor/scalable/apps/a.svg")), u32::MAX);
-        assert_eq!(size_from_path(Path::new("/i/hicolor/256x256@2/apps/a.png")), 256);
+        assert_eq!(
+            size_from_path(Path::new("/i/hicolor/scalable/apps/a.svg")),
+            u32::MAX
+        );
+        assert_eq!(
+            size_from_path(Path::new("/i/hicolor/256x256@2/apps/a.png")),
+            256
+        );
     }
 }

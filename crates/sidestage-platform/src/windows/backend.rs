@@ -9,25 +9,29 @@ use sidestage_core::{WindowId, WindowInfo};
 use windows::core::{BOOL, HSTRING, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
-use windows::Win32::Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
+use windows::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW,
+};
 use windows::Win32::System::Threading::{
-    GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, EnumWindows, GetAncestor, GetClassLongPtrW, GetMessageW, GetWindow, GetWindowLongPtrW,
-    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
-    SendMessageTimeoutW, SetForegroundWindow, SetTimer, ShowWindowAsync, TranslateMessage, CHILDID_SELF,
-    EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_NAMECHANGE,
-    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON,
-    GCLP_HICONSM, GWL_EXSTYLE, GW_OWNER, HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG,
-    SW_RESTORE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON, WM_TIMER, WS_EX_APPWINDOW,
+    DispatchMessageW, EnumWindows, GetAncestor, GetClassLongPtrW, GetMessageW, GetWindow,
+    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+    IsWindow, IsWindowVisible, SendMessageTimeoutW, SetForegroundWindow, SetTimer, ShowWindowAsync,
+    TranslateMessage, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+    EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON, GCLP_HICONSM, GWL_EXSTYLE, GW_OWNER,
+    HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG, SW_RESTORE,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON, WM_TIMER, WS_EX_APPWINDOW,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::icons;
-use crate::{ThumbnailMode, WindowBackend, WindowEvent, Waker};
+use crate::{ThumbnailMode, Waker, WindowBackend, WindowEvent};
 
 pub struct Win32Backend;
 
@@ -98,7 +102,11 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
         own_pid: unsafe { GetCurrentProcessId() },
     };
     STATE.with(|s| *s.borrow_mut() = Some(state));
-    let _ = tx.send(WindowEvent::Status(BackendStatus { backend: "Windows".into(), connected: true, message: None }));
+    let _ = tx.send(WindowEvent::Status(BackendStatus {
+        backend: "Windows".into(),
+        connected: true,
+        message: None,
+    }));
     resync();
 
     let ranges = [
@@ -109,7 +117,17 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
     ];
     let hooks: Vec<HWINEVENTHOOK> = ranges
         .iter()
-        .map(|(a, b)| unsafe { SetWinEventHook(*a, *b, None, Some(on_event), 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS) })
+        .map(|(a, b)| unsafe {
+            SetWinEventHook(
+                *a,
+                *b,
+                None,
+                Some(on_event),
+                0,
+                0,
+                WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+            )
+        })
         .collect();
     // Safety net: periodic resync for anything the hooks miss.
     unsafe { SetTimer(None, 0, 5000, None) };
@@ -128,7 +146,15 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
     }
 }
 
-unsafe extern "system" fn on_event(_: HWINEVENTHOOK, event: u32, hwnd: HWND, id_object: i32, id_child: i32, _: u32, _: u32) {
+unsafe extern "system" fn on_event(
+    _: HWINEVENTHOOK,
+    event: u32,
+    hwnd: HWND,
+    id_object: i32,
+    id_child: i32,
+    _: u32,
+    _: u32,
+) {
     if hwnd.0.is_null() || id_object != OBJID_WINDOW.0 || id_child != CHILDID_SELF as i32 {
         return;
     }
@@ -139,7 +165,9 @@ unsafe extern "system" fn on_event(_: HWINEVENTHOOK, event: u32, hwnd: HWND, id_
         match event {
             EVENT_OBJECT_DESTROY => {
                 if state.windows.remove(&key).is_some() {
-                    let _ = state.tx.send(WindowEvent::Removed(WindowId(key.to_string())));
+                    let _ = state
+                        .tx
+                        .send(WindowEvent::Removed(WindowId(key.to_string())));
                     (state.waker)();
                 }
             }
@@ -184,7 +212,11 @@ impl State {
         let key = hwnd.0 as isize;
         match self.describe(hwnd) {
             Some(info) => {
-                let changed = self.windows.get(&key).map(|t| t.info != info).unwrap_or(true);
+                let changed = self
+                    .windows
+                    .get(&key)
+                    .map(|t| t.info != info)
+                    .unwrap_or(true);
                 if changed {
                     self.windows.insert(key, Tracked { info: info.clone() });
                     let _ = self.tx.send(WindowEvent::Upsert(info));
@@ -193,7 +225,9 @@ impl State {
             }
             None => {
                 if self.windows.remove(&key).is_some() {
-                    let _ = self.tx.send(WindowEvent::Removed(WindowId(key.to_string())));
+                    let _ = self
+                        .tx
+                        .send(WindowEvent::Removed(WindowId(key.to_string())));
                     (self.waker)();
                 }
             }
@@ -258,7 +292,10 @@ impl State {
                 };
                 let icon = shell.or_else(|| window_icon(hwnd));
                 if let Some(image) = icon {
-                    let _ = self.tx.send(WindowEvent::Icon { app_key: app_key.clone(), image });
+                    let _ = self.tx.send(WindowEvent::Icon {
+                        app_key: app_key.clone(),
+                        image,
+                    });
                 }
             }
             Some(WindowInfo {
@@ -278,7 +315,8 @@ fn process_path(pid: u32) -> Option<String> {
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buf = vec![0u16; 1024];
         let mut len = buf.len() as u32;
-        let r = QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len);
+        let r =
+            QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len);
         let _ = CloseHandle(h);
         r.ok()?;
         Some(String::from_utf16_lossy(&buf[..len as usize]))
@@ -303,7 +341,10 @@ fn app_display_name(app_key: &str, exe: &str) -> String {
         }
     }
     file_description(exe).unwrap_or_else(|| {
-        std::path::Path::new(exe).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Application".into())
+        std::path::Path::new(exe)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Application".into())
     })
 }
 
@@ -330,16 +371,38 @@ fn file_description(exe: &str) -> Option<String> {
         let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut len = 0u32;
         let mut lang_code = (0x0409u16, 0x04B0u16);
-        if VerQueryValueW(data.as_ptr() as *const _, &HSTRING::from(r"\VarFileInfo\Translation"), &mut ptr, &mut len).as_bool() && len >= 4 {
+        if VerQueryValueW(
+            data.as_ptr() as *const _,
+            &HSTRING::from(r"\VarFileInfo\Translation"),
+            &mut ptr,
+            &mut len,
+        )
+        .as_bool()
+            && len >= 4
+        {
             let pair = std::slice::from_raw_parts(ptr as *const u16, 2);
             lang_code = (pair[0], pair[1]);
         }
-        let key = format!(r"\StringFileInfo\{:04x}{:04x}\FileDescription", lang_code.0, lang_code.1);
-        if !VerQueryValueW(data.as_ptr() as *const _, &HSTRING::from(key), &mut ptr, &mut len).as_bool() || len == 0 {
+        let key = format!(
+            r"\StringFileInfo\{:04x}{:04x}\FileDescription",
+            lang_code.0, lang_code.1
+        );
+        if !VerQueryValueW(
+            data.as_ptr() as *const _,
+            &HSTRING::from(key),
+            &mut ptr,
+            &mut len,
+        )
+        .as_bool()
+            || len == 0
+        {
             return None;
         }
         let s = std::slice::from_raw_parts(ptr as *const u16, len as usize);
-        let text = String::from_utf16_lossy(s).trim_end_matches('\0').trim().to_string();
+        let text = String::from_utf16_lossy(s)
+            .trim_end_matches('\0')
+            .trim()
+            .to_string();
         (!text.is_empty()).then_some(text)
     }
 }
@@ -348,7 +411,15 @@ fn window_icon(hwnd: HWND) -> Option<sidestage_core::RgbaImage> {
     unsafe {
         let mut result = 0usize;
         for kind in [ICON_BIG, ICON_SMALL2] {
-            let ok = SendMessageTimeoutW(hwnd, WM_GETICON, WPARAM(kind as usize), LPARAM(0), SMTO_ABORTIFHUNG, 100, Some(&mut result));
+            let ok = SendMessageTimeoutW(
+                hwnd,
+                WM_GETICON,
+                WPARAM(kind as usize),
+                LPARAM(0),
+                SMTO_ABORTIFHUNG,
+                100,
+                Some(&mut result),
+            );
             if ok.0 != 0 && result != 0 {
                 if let Some(img) = icons::hicon_to_rgba(HICON(result as *mut _)) {
                     return Some(img);

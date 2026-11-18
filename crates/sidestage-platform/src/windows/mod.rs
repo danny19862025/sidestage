@@ -19,14 +19,17 @@ use std::sync::mpsc::Sender;
 use anyhow::{anyhow, bail, Result};
 use sidestage_core::{IconSource, LaunchTarget, RgbaImage};
 use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
+use windows::Win32::System::Com::{
+    CoInitializeEx, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+};
 use windows::Win32::System::Registry::{
-    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
+    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD,
+    RRF_RT_REG_SZ,
 };
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-use crate::{WindowBackend, WindowEvent, Waker};
+use crate::{Waker, WindowBackend, WindowEvent};
 
 pub use panel::{on_instance_signal, signal_running_instance};
 
@@ -42,8 +45,17 @@ pub fn start_window_backend(tx: Sender<WindowEvent>, waker: Waker) -> Box<dyn Wi
 }
 
 pub fn session_description() -> String {
-    let build = reg_string(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", "CurrentBuild", true).unwrap_or_default();
-    let name = if build.parse::<u32>().map(|b| b >= 22000).unwrap_or(false) { "Windows 11" } else { "Windows" };
+    let build = reg_string(
+        r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+        "CurrentBuild",
+        true,
+    )
+    .unwrap_or_default();
+    let name = if build.parse::<u32>().map(|b| b >= 22000).unwrap_or(false) {
+        "Windows 11"
+    } else {
+        "Windows"
+    };
     format!("{name} (build {build})")
 }
 
@@ -69,7 +81,11 @@ pub fn system_prefers_dark() -> Option<bool> {
 
 fn reg_string(key: &str, value: &str, local_machine: bool) -> Option<String> {
     use windows::Win32::System::Registry::HKEY_LOCAL_MACHINE;
-    let root = if local_machine { HKEY_LOCAL_MACHINE } else { HKEY_CURRENT_USER };
+    let root = if local_machine {
+        HKEY_LOCAL_MACHINE
+    } else {
+        HKEY_CURRENT_USER
+    };
     let mut buf = vec![0u16; 512];
     let mut size = (buf.len() * 2) as u32;
     let err = unsafe {
@@ -107,7 +123,13 @@ pub fn set_launch_at_login(enabled: bool) -> Result<()> {
         };
         err.ok().map_err(|e| anyhow!("writing the Run key: {e}"))
     } else {
-        let err = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN_KEY), &HSTRING::from("Sidestage")) };
+        let err = unsafe {
+            RegDeleteKeyValueW(
+                HKEY_CURRENT_USER,
+                &HSTRING::from(RUN_KEY),
+                &HSTRING::from("Sidestage"),
+            )
+        };
         // ERROR_FILE_NOT_FOUND (2) means it was not enabled: fine.
         if err.is_ok() || err.0 == 2 {
             Ok(())
@@ -130,8 +152,15 @@ fn shell_open(file: &str, params: &str, dir: Option<&str>) -> Result<()> {
             None,
             &HSTRING::from("open"),
             &file_w,
-            if params.is_empty() { PCWSTR::null() } else { PCWSTR(params_w.as_ptr()) },
-            dir_w.as_ref().map(|d| PCWSTR(d.as_ptr())).unwrap_or(PCWSTR::null()),
+            if params.is_empty() {
+                PCWSTR::null()
+            } else {
+                PCWSTR(params_w.as_ptr())
+            },
+            dir_w
+                .as_ref()
+                .map(|d| PCWSTR(d.as_ptr()))
+                .unwrap_or(PCWSTR::null()),
             SW_SHOWNORMAL,
         )
     };
@@ -144,30 +173,48 @@ fn shell_open(file: &str, params: &str, dir: Option<&str>) -> Result<()> {
 
 fn quote_args(args: &[String]) -> String {
     args.iter()
-        .map(|a| if a.is_empty() || a.contains([' ', '\t', '"']) { format!("\"{}\"", a.replace('"', "\\\"")) } else { a.clone() })
+        .map(|a| {
+            if a.is_empty() || a.contains([' ', '\t', '"']) {
+                format!("\"{}\"", a.replace('"', "\\\""))
+            } else {
+                a.clone()
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
 
 pub fn launch(target: &LaunchTarget) -> Result<()> {
     match target {
-        LaunchTarget::AppsFolder { parsing_name } => shell_open(&format!("shell:AppsFolder\\{parsing_name}"), "", None),
+        LaunchTarget::AppsFolder { parsing_name } => {
+            shell_open(&format!("shell:AppsFolder\\{parsing_name}"), "", None)
+        }
         LaunchTarget::Path { path, args } => {
             if !path.exists() {
                 bail!("{} no longer exists", path.display());
             }
             let dir = path.parent().map(|p| p.display().to_string());
-            shell_open(&path.display().to_string(), &quote_args(args), dir.as_deref())
+            shell_open(
+                &path.display().to_string(),
+                &quote_args(args),
+                dir.as_deref(),
+            )
         }
         LaunchTarget::Command { program, args } => shell_open(program, &quote_args(args), None),
-        LaunchTarget::DesktopEntry { .. } => bail!("Linux .desktop shortcuts cannot be launched on Windows"),
+        LaunchTarget::DesktopEntry { .. } => {
+            bail!("Linux .desktop shortcuts cannot be launched on Windows")
+        }
     }
 }
 
 pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Option<RgbaImage> {
     match icon {
         IconSource::File { path } => {
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
             if matches!(ext.as_str(), "png" | "ico" | "jpg" | "jpeg" | "bmp") {
                 image::open(path).ok().and_then(|i| {
                     let i = i.into_rgba8();
@@ -180,9 +227,13 @@ pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Op
         }
         IconSource::Themed { .. } => None,
         IconSource::Auto => match target {
-            LaunchTarget::AppsFolder { parsing_name } => icons::shell_icon(&format!("shell:AppsFolder\\{parsing_name}"), size),
+            LaunchTarget::AppsFolder { parsing_name } => {
+                icons::shell_icon(&format!("shell:AppsFolder\\{parsing_name}"), size)
+            }
             LaunchTarget::Path { path, .. } => icons::shell_icon(&path.display().to_string(), size),
-            LaunchTarget::Command { program, .. } => icons::find_on_path(program).and_then(|p| icons::shell_icon(&p, size)),
+            LaunchTarget::Command { program, .. } => {
+                icons::find_on_path(program).and_then(|p| icons::shell_icon(&p, size))
+            }
             LaunchTarget::DesktopEntry { .. } => None,
         },
     }

@@ -19,7 +19,7 @@ use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
 use super::AppResolver;
-use crate::{ThumbnailMode, WindowBackend, WindowEvent, Waker};
+use crate::{ThumbnailMode, Waker, WindowBackend, WindowEvent};
 
 x11rb::atom_manager! {
     Atoms: AtomsCookie {
@@ -57,7 +57,12 @@ impl WindowBackend for X11Backend {
         let conn = self.conn.lock().unwrap();
         // EWMH WMs de-iconify and focus a window on _NET_ACTIVE_WINDOW.
         let ev = ClientMessageEvent::new(32, win, self.atoms._NET_ACTIVE_WINDOW, [2, 0, 0, 0, 0]);
-        let _ = conn.send_event(false, self.root, EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY, ev);
+        let _ = conn.send_event(
+            false,
+            self.root,
+            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+            ev,
+        );
         let _ = conn.flush();
     }
 }
@@ -74,28 +79,34 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
         anyhow::bail!("window manager does not publish _NET_CLIENT_LIST");
     }
     let (conn, _) = x11rb::connect(None)?;
-    std::thread::Builder::new().name("x11-ewmh".into()).spawn(move || {
-        let mut w = Watcher {
-            conn,
-            root,
-            atoms,
-            tx: tx.clone(),
-            waker: waker.clone(),
-            known: HashMap::new(),
-            iconed: HashSet::new(),
-            resolver: AppResolver::new(tx.clone(), waker.clone()),
-            own_pid: std::process::id(),
-        };
-        let _ = tx.send(WindowEvent::Status(BackendStatus {
-            backend: "X11 (EWMH)".into(),
-            connected: true,
-            message: Some("X11 cannot preview minimized windows; showing icons.".into()),
-        }));
-        if let Err(e) = w.run() {
-            log::error!("X11 backend stopped: {e:#}");
-        }
-    })?;
-    Ok(X11Backend { conn: Mutex::new(cmd_conn), root, atoms })
+    std::thread::Builder::new()
+        .name("x11-ewmh".into())
+        .spawn(move || {
+            let mut w = Watcher {
+                conn,
+                root,
+                atoms,
+                tx: tx.clone(),
+                waker: waker.clone(),
+                known: HashMap::new(),
+                iconed: HashSet::new(),
+                resolver: AppResolver::new(tx.clone(), waker.clone()),
+                own_pid: std::process::id(),
+            };
+            let _ = tx.send(WindowEvent::Status(BackendStatus {
+                backend: "X11 (EWMH)".into(),
+                connected: true,
+                message: Some("X11 cannot preview minimized windows; showing icons.".into()),
+            }));
+            if let Err(e) = w.run() {
+                log::error!("X11 backend stopped: {e:#}");
+            }
+        })?;
+    Ok(X11Backend {
+        conn: Mutex::new(cmd_conn),
+        root,
+        atoms,
+    })
 }
 
 struct Watcher {
@@ -112,7 +123,10 @@ struct Watcher {
 
 impl Watcher {
     fn run(&mut self) -> Result<()> {
-        self.conn.change_window_attributes(self.root, &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE))?;
+        self.conn.change_window_attributes(
+            self.root,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        )?;
         self.sync_clients()?;
         self.conn.flush()?;
         loop {
@@ -122,8 +136,13 @@ impl Watcher {
                     if p.atom == self.atoms._NET_CLIENT_LIST {
                         self.sync_clients()?;
                     }
-                } else if [self.atoms._NET_WM_STATE, self.atoms._NET_WM_NAME, self.atoms.WM_STATE, u32::from(AtomEnum::WM_NAME)]
-                    .contains(&p.atom)
+                } else if [
+                    self.atoms._NET_WM_STATE,
+                    self.atoms._NET_WM_NAME,
+                    self.atoms.WM_STATE,
+                    u32::from(AtomEnum::WM_NAME),
+                ]
+                .contains(&p.atom)
                 {
                     self.refresh(p.window);
                 }
@@ -134,13 +153,25 @@ impl Watcher {
     fn sync_clients(&mut self) -> Result<()> {
         let list: Vec<Window> = self
             .conn
-            .get_property(false, self.root, self.atoms._NET_CLIENT_LIST, AtomEnum::WINDOW, 0, 4096)?
+            .get_property(
+                false,
+                self.root,
+                self.atoms._NET_CLIENT_LIST,
+                AtomEnum::WINDOW,
+                0,
+                4096,
+            )?
             .reply()?
             .value32()
             .map(|v| v.collect())
             .unwrap_or_default();
         let current: HashSet<Window> = list.iter().copied().collect();
-        let gone: Vec<Window> = self.known.keys().filter(|w| !current.contains(w)).copied().collect();
+        let gone: Vec<Window> = self
+            .known
+            .keys()
+            .filter(|w| !current.contains(w))
+            .copied()
+            .collect();
         for w in gone {
             if let Some(Some(_)) = self.known.remove(&w) {
                 let _ = self.tx.send(WindowEvent::Removed(WindowId(w.to_string())));
@@ -148,7 +179,10 @@ impl Watcher {
         }
         for w in list {
             if !self.known.contains_key(&w) {
-                let _ = self.conn.change_window_attributes(w, &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE));
+                let _ = self.conn.change_window_attributes(
+                    w,
+                    &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+                );
                 self.known.insert(w, None);
                 self.refresh(w);
             }
@@ -168,7 +202,12 @@ impl Watcher {
     }
 
     fn string_prop(&self, w: Window, prop: u32, ty: u32) -> Option<String> {
-        let r = self.conn.get_property(false, w, prop, ty, 0, 1024).ok()?.reply().ok()?;
+        let r = self
+            .conn
+            .get_property(false, w, prop, ty, 0, 1024)
+            .ok()?
+            .reply()
+            .ok()?;
         (!r.value.is_empty()).then(|| String::from_utf8_lossy(&r.value).into_owned())
     }
 
@@ -194,7 +233,11 @@ impl Watcher {
     fn read(&mut self, w: Window) -> Option<WindowInfo> {
         let a = &self.atoms;
         let types = self.atoms_of(w, a._NET_WM_WINDOW_TYPE);
-        if !types.is_empty() && !types.iter().any(|t| *t == a._NET_WM_WINDOW_TYPE_NORMAL || *t == a._NET_WM_WINDOW_TYPE_DIALOG) {
+        if !types.is_empty()
+            && !types
+                .iter()
+                .any(|t| *t == a._NET_WM_WINDOW_TYPE_NORMAL || *t == a._NET_WM_WINDOW_TYPE_DIALOG)
+        {
             return None;
         }
         let states = self.atoms_of(w, a._NET_WM_STATE);
@@ -228,24 +271,59 @@ impl Watcher {
             .ok()
             .and_then(|c| c.reply().ok())
             .map(|r| {
-                let parts: Vec<String> = r.value.split(|b| *b == 0).map(|s| String::from_utf8_lossy(s).into_owned()).collect();
-                parts.get(1).cloned().filter(|s| !s.is_empty()).or_else(|| parts.first().cloned()).unwrap_or_default()
+                let parts: Vec<String> = r
+                    .value
+                    .split(|b| *b == 0)
+                    .map(|s| String::from_utf8_lossy(s).into_owned())
+                    .collect();
+                parts
+                    .get(1)
+                    .cloned()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| parts.first().cloned())
+                    .unwrap_or_default()
             })
             .unwrap_or_default();
-        let app_key = if class.is_empty() { format!("x11:{w}") } else { class.clone() };
+        let app_key = if class.is_empty() {
+            format!("x11:{w}")
+        } else {
+            class.clone()
+        };
         let app = self.resolver.resolve(&app_key, pid, "");
         if !self.iconed.contains(&app_key) {
             // Prefer the window's own _NET_WM_ICON over the theme lookup.
             if let Some(img) = self.net_wm_icon(w, 64) {
                 self.iconed.insert(app_key.clone());
-                let _ = self.tx.send(WindowEvent::Icon { app_key: app_key.clone(), image: img });
+                let _ = self.tx.send(WindowEvent::Icon {
+                    app_key: app_key.clone(),
+                    image: img,
+                });
             }
         }
-        Some(WindowInfo { id: WindowId(w.to_string()), app_key, app_name: app.name, title, minimized, icon_hint: app.icon })
+        Some(WindowInfo {
+            id: WindowId(w.to_string()),
+            app_key,
+            app_name: app.name,
+            title,
+            minimized,
+            icon_hint: app.icon,
+        })
     }
 
     fn net_wm_icon(&self, w: Window, want: u32) -> Option<RgbaImage> {
-        let r = self.conn.get_property(false, w, self.atoms._NET_WM_ICON, AtomEnum::CARDINAL, 0, 1 << 20).ok()?.reply().ok()?;
+        let r = self
+            .conn
+            .get_property(
+                false,
+                w,
+                self.atoms._NET_WM_ICON,
+                AtomEnum::CARDINAL,
+                0,
+                1 << 20,
+            )
+            .ok()?
+            .reply()
+            .ok()?;
         let data: Vec<u32> = r.value32()?.collect();
         best_icon(&data, want)
     }
@@ -270,7 +348,12 @@ fn best_icon(data: &[u32], want: u32) -> Option<RgbaImage> {
     let (w, h, off) = best?;
     let mut px = Vec::with_capacity((w * h * 4) as usize);
     for &argb in &data[off..off + (w * h) as usize] {
-        px.extend_from_slice(&[(argb >> 16) as u8, (argb >> 8) as u8, argb as u8, (argb >> 24) as u8]);
+        px.extend_from_slice(&[
+            (argb >> 16) as u8,
+            (argb >> 8) as u8,
+            argb as u8,
+            (argb >> 24) as u8,
+        ]);
     }
     RgbaImage::new(w, h, px)
 }

@@ -62,28 +62,61 @@ impl Palette {
     }
 
     pub fn card_shadow(&self) -> Shadow {
-        Shadow { offset: [0, 3], blur: 12, spread: 0, color: self.shadow }
+        Shadow {
+            offset: [0, 3],
+            blur: 12,
+            spread: 0,
+            color: self.shadow,
+        }
     }
 }
 
 pub const RADIUS: u8 = 12;
 
 pub fn apply(ctx: &egui::Context, p: &Palette) {
-    let mut v = if p.dark { Visuals::dark() } else { Visuals::light() };
+    let mut v = if p.dark {
+        Visuals::dark()
+    } else {
+        Visuals::light()
+    };
     v.panel_fill = p.surface;
-    v.window_fill = if p.dark { Color32::from_rgb(32, 33, 39) } else { Color32::from_rgb(250, 250, 252) };
+    v.window_fill = if p.dark {
+        Color32::from_rgb(32, 33, 39)
+    } else {
+        Color32::from_rgb(250, 250, 252)
+    };
     v.window_stroke = Stroke::new(1.0, p.border);
     v.window_corner_radius = CornerRadius::same(RADIUS);
     v.menu_corner_radius = CornerRadius::same(10);
-    v.window_shadow = Shadow { offset: [0, 6], blur: 24, spread: 0, color: p.shadow };
-    v.popup_shadow = Shadow { offset: [0, 4], blur: 16, spread: 0, color: p.shadow };
+    v.window_shadow = Shadow {
+        offset: [0, 6],
+        blur: 24,
+        spread: 0,
+        color: p.shadow,
+    };
+    v.popup_shadow = Shadow {
+        offset: [0, 4],
+        blur: 16,
+        spread: 0,
+        color: p.shadow,
+    };
     v.override_text_color = Some(p.text);
     v.hyperlink_color = p.accent;
     v.selection.bg_fill = p.accent_soft;
     v.selection.stroke = Stroke::new(1.0, p.accent);
-    v.extreme_bg_color = if p.dark { Color32::from_rgb(22, 23, 28) } else { Color32::from_rgb(236, 238, 243) };
+    v.extreme_bg_color = if p.dark {
+        Color32::from_rgb(22, 23, 28)
+    } else {
+        Color32::from_rgb(236, 238, 243)
+    };
     v.faint_bg_color = p.hover;
-    for w in [&mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open, &mut v.widgets.noninteractive] {
+    for w in [
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+        &mut v.widgets.noninteractive,
+    ] {
         w.corner_radius = CornerRadius::same(8);
     }
     v.widgets.inactive.weak_bg_fill = p.hover;
@@ -95,7 +128,11 @@ pub fn apply(ctx: &egui::Context, p: &Palette) {
     v.widgets.active.weak_bg_fill = p.accent_soft;
     v.widgets.active.bg_fill = p.accent_soft;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.border);
-    let theme = if p.dark { egui::Theme::Dark } else { egui::Theme::Light };
+    let theme = if p.dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
     ctx.set_theme(theme);
     ctx.set_visuals_of(theme, v);
 
@@ -106,11 +143,23 @@ pub fn apply(ctx: &egui::Context, p: &Palette) {
         s.spacing.scroll.bar_width = 6.0;
         s.spacing.scroll.floating = true;
         s.text_styles = [
-            (TextStyle::Heading, FontId::new(17.0, FontFamily::Proportional)),
+            (
+                TextStyle::Heading,
+                FontId::new(17.0, FontFamily::Proportional),
+            ),
             (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
-            (TextStyle::Button, FontId::new(13.5, FontFamily::Proportional)),
-            (TextStyle::Small, FontId::new(11.0, FontFamily::Proportional)),
-            (TextStyle::Monospace, FontId::new(12.5, FontFamily::Monospace)),
+            (
+                TextStyle::Button,
+                FontId::new(13.5, FontFamily::Proportional),
+            ),
+            (
+                TextStyle::Small,
+                FontId::new(11.0, FontFamily::Proportional),
+            ),
+            (
+                TextStyle::Monospace,
+                FontId::new(12.5, FontFamily::Monospace),
+            ),
         ]
         .into();
     });

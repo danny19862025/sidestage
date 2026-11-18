@@ -14,7 +14,7 @@ use sidestage_core::tracker::BackendStatus;
 use sidestage_core::{WindowId, WindowInfo};
 
 use super::AppResolver;
-use crate::{ThumbnailMode, WindowBackend, WindowEvent, Waker};
+use crate::{ThumbnailMode, Waker, WindowBackend, WindowEvent};
 
 const BUS_NAME: &str = "org.sidestage.Shell";
 const PATH: &str = "/org/sidestage/Shell";
@@ -55,7 +55,10 @@ impl WindowBackend for GnomeBackend {
         ThumbnailMode::Snapshot
     }
     fn restore(&self, id: &WindowId) {
-        if let Err(e) = self.proxy().and_then(|p| p.call::<_, _, ()>("Activate", &(id.0.as_str(),))) {
+        if let Err(e) = self
+            .proxy()
+            .and_then(|p| p.call::<_, _, ()>("Activate", &(id.0.as_str(),)))
+        {
             log::warn!("GNOME extension Activate failed: {e}");
         }
     }
@@ -64,15 +67,25 @@ impl WindowBackend for GnomeBackend {
     }
 }
 
-fn request_thumbnail(conn: &zbus::blocking::Connection, tx: &Sender<WindowEvent>, waker: &Waker, id: &str) {
+fn request_thumbnail(
+    conn: &zbus::blocking::Connection,
+    tx: &Sender<WindowEvent>,
+    waker: &Waker,
+    id: &str,
+) {
     let (conn, tx, waker, id) = (conn.clone(), tx.clone(), waker.clone(), id.to_string());
     std::thread::spawn(move || {
         let path: zbus::Result<String> = zbus::blocking::Proxy::new(&conn, BUS_NAME, PATH, IFACE)
             .and_then(|p| p.call("Snapshot", &(id.as_str(), THUMB_MAX)));
         match path {
             Ok(path) if !path.is_empty() => {
-                if let Some(img) = super::icons::load_image_file(std::path::Path::new(&path), THUMB_MAX) {
-                    let _ = tx.send(WindowEvent::Thumbnail { id: WindowId(id), image: Some(img) });
+                if let Some(img) =
+                    super::icons::load_image_file(std::path::Path::new(&path), THUMB_MAX)
+                {
+                    let _ = tx.send(WindowEvent::Thumbnail {
+                        id: WindowId(id),
+                        image: Some(img),
+                    });
                     waker();
                 }
                 let _ = std::fs::remove_file(&path);
@@ -85,7 +98,11 @@ fn request_thumbnail(conn: &zbus::blocking::Connection, tx: &Sender<WindowEvent>
 
 pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<GnomeBackend> {
     let conn = zbus::blocking::Connection::session().context("session bus")?;
-    let backend = GnomeBackend { conn: conn.clone(), tx: tx.clone(), waker: waker.clone() };
+    let backend = GnomeBackend {
+        conn: conn.clone(),
+        tx: tx.clone(),
+        waker: waker.clone(),
+    };
     std::thread::Builder::new().name("gnome-ext".into()).spawn(move || {
         let mut resolver = AppResolver::new(tx.clone(), waker.clone());
         let mut minimized_before = std::collections::HashSet::<String>::new();
@@ -137,13 +154,19 @@ fn follow(
 ) -> Result<()> {
     let proxy = zbus::blocking::Proxy::new(conn, BUS_NAME, PATH, IFACE)?;
     let signals = proxy.receive_signal("Changed")?;
-    let sync = |resolver: &mut AppResolver, minimized_before: &mut std::collections::HashSet<String>| -> Result<()> {
+    let sync = |resolver: &mut AppResolver,
+                minimized_before: &mut std::collections::HashSet<String>|
+     -> Result<()> {
         let json: String = proxy.call("ListWindows", &())?;
         let list: Vec<ExtWindow> = serde_json::from_str(&json)?;
         let mut infos = Vec::with_capacity(list.len());
         let mut now_min = std::collections::HashSet::new();
         for w in list {
-            let key = if w.app_id.is_empty() { format!("gnome:{}", w.id) } else { w.app_id.trim_end_matches(".desktop").to_string() };
+            let key = if w.app_id.is_empty() {
+                format!("gnome:{}", w.id)
+            } else {
+                w.app_id.trim_end_matches(".desktop").to_string()
+            };
             let app = resolver.resolve(&key, None, &w.icon);
             if w.minimized {
                 now_min.insert(w.id.clone());
@@ -154,8 +177,16 @@ fn follow(
             infos.push(WindowInfo {
                 id: WindowId(w.id),
                 app_key: key,
-                app_name: if w.app_name.is_empty() { app.name } else { w.app_name },
-                title: if w.title.is_empty() { "Untitled window".into() } else { w.title },
+                app_name: if w.app_name.is_empty() {
+                    app.name
+                } else {
+                    w.app_name
+                },
+                title: if w.title.is_empty() {
+                    "Untitled window".into()
+                } else {
+                    w.title
+                },
                 minimized: w.minimized,
                 icon_hint: app.icon,
             });
@@ -182,7 +213,8 @@ pub fn set_reserved_space(monitor: &str, edge: sidestage_core::config::Edge, siz
     let (monitor, edge) = (monitor.to_string(), edge.to_string());
     std::thread::spawn(move || {
         let r = zbus::blocking::Connection::session().and_then(|c| {
-            zbus::blocking::Proxy::new(&c, BUS_NAME, PATH, IFACE)?.call::<_, _, ()>("SetReservedSpace", &(monitor.as_str(), edge.as_str(), size))
+            zbus::blocking::Proxy::new(&c, BUS_NAME, PATH, IFACE)?
+                .call::<_, _, ()>("SetReservedSpace", &(monitor.as_str(), edge.as_str(), size))
         });
         if let Err(e) = r {
             log::debug!("GNOME extension SetReservedSpace: {e}");
