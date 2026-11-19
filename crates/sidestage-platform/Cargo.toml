@@ -3,6 +3,7 @@ name = "sidestage-platform"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Window-manager, launcher, icon and panel integration for Sidestage (Windows, KDE, GNOME, X11)"
 
 [dependencies]

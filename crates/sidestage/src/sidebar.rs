@@ -418,15 +418,8 @@ fn header(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
     let p = *f.p;
     ui.horizontal(|ui| {
         ui.set_height(30.0);
-        if let Some(tex) = app.textures.app_icon("__brand") {
-            ui.add(egui::Image::new(tex).fit_to_exact_size(vec2(20.0, 20.0)));
-        }
-        ui.label(
-            egui::RichText::new("Sidestage")
-                .size(14.5)
-                .strong()
-                .color(p.text),
-        );
+        // Buttons are laid out first (right to left) so the brand gets only
+        // the space that is left and can never run into the search button.
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             if app.config.settings.auto_hide {
@@ -454,6 +447,39 @@ fn header(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
                     app.search.clear();
                 }
             }
+            ui.add_space(8.0);
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                if let Some(tex) = app.textures.app_icon("__brand") {
+                    ui.add(egui::Image::new(tex).fit_to_exact_size(vec2(20.0, 20.0)));
+                }
+                // Shrink the title a little on narrow sidebars or with wider
+                // system fonts, then truncate as a last resort.
+                let room = ui.available_width();
+                let brand = |size: f32| {
+                    egui::RichText::new("Sidestage")
+                        .size(size)
+                        .strong()
+                        .color(p.text)
+                };
+                // Measure the exact text the label will draw (strong text
+                // can be wider than the plain font).
+                let width = |size: f32| {
+                    egui::WidgetText::from(brand(size))
+                        .into_galley(
+                            ui,
+                            Some(egui::TextWrapMode::Extend),
+                            f32::INFINITY,
+                            egui::TextStyle::Body,
+                        )
+                        .size()
+                        .x
+                };
+                let mut size = 14.5;
+                while size > 11.5 && width(size) > room {
+                    size -= 0.5;
+                }
+                ui.add(egui::Label::new(brand(size)).truncate());
+            });
         });
     });
 
