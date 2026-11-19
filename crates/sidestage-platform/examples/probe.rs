@@ -60,7 +60,7 @@ fn main() {
                     if w.minimized
                         && w.app_key == app
                         && restore_at.is_none()
-                        && tracker.restore_all_order(app).len() >= 1
+                        && !tracker.restore_all_order(app).is_empty()
                     {
                         restore_at = Some((
                             Instant::now() + Duration::from_secs(2),
