@@ -11,7 +11,10 @@
 //   WatchPointer(i x, i y, i w, i h) report pointer crossings of the sidebar
 //                                    (XWayland does not send LeaveNotify when
 //                                    the pointer moves onto a Wayland window)
+//   SetShortcut(s accel) -> (b, s)   global shortcut for Sidestage search
+//   FocusPrevious()                  refocus the last non-Sidestage window
 //   signal Changed()                 window set or state changed
+//   signal ShortcutActivated()
 //   signal PointerInside(b)
 //
 // Previews are captured when a window starts minimizing (its actor is still
@@ -58,6 +61,9 @@ const IFACE_XML = `
       <arg type="i" direction="in" name="y"/>
       <arg type="u" direction="in" name="button"/>
     </method>
+    <method name="DebugKey">
+      <arg type="s" direction="in" name="keys"/>
+    </method>
     <method name="DebugGetenv">
       <arg type="s" direction="in" name="name"/>
       <arg type="s" direction="out" name="value"/>
@@ -68,6 +74,13 @@ const IFACE_XML = `
       <arg type="i" direction="in" name="width"/>
       <arg type="i" direction="in" name="height"/>
     </method>
+    <method name="SetShortcut">
+      <arg type="s" direction="in" name="accelerator"/>
+      <arg type="b" direction="out" name="ok"/>
+      <arg type="s" direction="out" name="message"/>
+    </method>
+    <method name="FocusPrevious"/>
+    <signal name="ShortcutActivated"/>
     <signal name="Changed"/>
     <signal name="PointerInside"><arg type="b" name="inside"/></signal>
   </interface>
@@ -107,10 +120,26 @@ export default class SidestageExtension extends Extension {
         this._nameId = Gio.bus_own_name_on_connection(Gio.DBus.session, BUS_NAME,
             Gio.BusNameOwnerFlags.REPLACE, null, null);
 
+        this._grab = null;
+        this._lastFocus = null;
         this._displaySignals = [
             global.display.connect('window-created', (_d, win) => {
                 this._track(win);
                 this._changed();
+            }),
+            global.display.connect('notify::focus-window', () => {
+                const w = global.display.focus_window;
+                if (w && !this._isSidestage(w))
+                    this._lastFocus = w;
+            }),
+            global.display.connect('accelerator-activated', (_d, action) => {
+                if (!this._grab || action !== this._grab.action)
+                    return;
+                // Give the sidebar keyboard focus, then let the app open search.
+                const side = global.display.list_all_windows().find(w => this._isSidestage(w) && w.get_title() === 'Sidestage');
+                if (side)
+                    Main.activateWindow(side, global.get_current_time());
+                this._dbus?.emit_signal('ShortcutActivated', null);
             }),
         ];
         for (const actor of global.get_window_actors())
@@ -143,6 +172,8 @@ export default class SidestageExtension extends Extension {
         this._displaySignals = [];
         this.SetReservedSpace('', 'left', 0);
         this.WatchPointer(0, 0, 0, 0);
+        this._ungrab();
+        this._lastFocus = null;
         for (const path of this._snapshots.values())
             GLib.unlink(path);
         this._snapshots.clear();
@@ -302,6 +333,38 @@ export default class SidestageExtension extends Extension {
         lm.addChrome(this._strut, {affectsStruts: true, trackFullscreen: true});
     }
 
+    _isSidestage(win) {
+        return (win.get_wm_class() ?? '').toLowerCase() === 'sidestage';
+    }
+
+    _ungrab() {
+        if (!this._grab)
+            return;
+        global.display.ungrab_accelerator(this._grab.action);
+        Main.wm.allowKeybinding(this._grab.name, Shell.ActionMode.NONE);
+        this._grab = null;
+    }
+
+    SetShortcut(accel) {
+        this._ungrab();
+        if (!accel)
+            return [true, 'disabled'];
+        // Mutter refuses accelerators another binding already owns.
+        const action = global.display.grab_accelerator(accel, Meta.KeyBindingFlags.NONE);
+        if (action === Meta.KeyBindingAction.NONE)
+            return [false, `${accel} is already used by GNOME or another extension`];
+        const name = Meta.external_binding_name_for_action(action);
+        Main.wm.allowKeybinding(name, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW);
+        this._grab = {action, name};
+        return [true, `${accel} via GNOME Shell`];
+    }
+
+    FocusPrevious() {
+        const w = this._lastFocus;
+        if (w && !w.minimized && global.display.list_all_windows().includes(w))
+            Main.activateWindow(w, global.get_current_time());
+    }
+
     WatchPointer(x, y, width, height) {
         if (this._cursorId) {
             this._cursorTracker.disconnect(this._cursorId);
@@ -374,5 +437,21 @@ export default class SidestageExtension extends Extension {
             });
             return GLib.SOURCE_REMOVE;
         });
+    }
+
+    // Test hook: presses a chord of keyvals given as "Control_L+Alt_L+space".
+    DebugKey(keys) {
+        if (GLib.getenv('SIDESTAGE_DEBUG') !== '1')
+            return;
+        const seat = global.stage.context.get_backend().get_default_seat();
+        if (!this._virtualKeyboard)
+            this._virtualKeyboard = seat.create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE);
+        const vals = keys.split('+').map(k => Clutter[`KEY_${k}`]);
+        const kb = this._virtualKeyboard;
+        let t = GLib.get_monotonic_time();
+        for (const v of vals)
+            kb.notify_keyval(t++, v, Clutter.KeyState.PRESSED);
+        for (const v of vals.reverse())
+            kb.notify_keyval(t++, v, Clutter.KeyState.RELEASED);
     }
 }

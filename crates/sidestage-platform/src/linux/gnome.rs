@@ -64,6 +64,14 @@ impl WindowBackend for GnomeBackend {
             log::warn!("GNOME extension Activate failed: {e}");
         }
     }
+    fn focus_previous(&self) {
+        if let Err(e) = self
+            .proxy()
+            .and_then(|p| p.call::<_, _, ()>("FocusPrevious", &()))
+        {
+            log::debug!("GNOME extension FocusPrevious: {e}");
+        }
+    }
     fn refresh_thumbnail(&self, id: &WindowId) {
         request_thumbnail(&self.conn, &self.tx, &self.waker, &id.0);
     }

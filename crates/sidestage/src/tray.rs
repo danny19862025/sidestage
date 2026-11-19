@@ -6,6 +6,8 @@ use std::sync::mpsc::Sender;
 pub enum TrayCommand {
     Settings,
     ToggleSidebar,
+    /// Global shortcut: open search with keyboard focus.
+    Search,
     Quit,
 }
 

@@ -88,6 +88,12 @@ pub struct SidestageApp {
     pub search: String,
     pub search_open: bool,
     pub search_focus_request: bool,
+    /// Highlighted row in search results.
+    pub search_selected: usize,
+    /// Give focus back to the previous window when the keyboard is released.
+    pub refocus_previous: bool,
+    hotkey: Option<sidestage_platform::hotkey::Hotkey>,
+    pub hotkey_status: sidestage_platform::hotkey::HotkeyStatus,
     pub expanded_groups: HashSet<String>,
     pub renaming_section: Option<(String, String)>,
     pub pending_restore: HashMap<WindowId, Instant>,
@@ -159,7 +165,13 @@ impl SidestageApp {
         let (batch_tx, batch_rx) = mpsc::channel();
         let (pick_tx, pick_rx) = mpsc::channel();
         let (tray_tx, tray_rx) = mpsc::channel();
+        let hotkey_tx = tray_tx.clone();
         let tray = Tray::new(tray_tx, ctx.clone());
+        let hotkey_ctx = ctx.clone();
+        let hotkey = sidestage_platform::hotkey::Hotkey::new(Arc::new(move || {
+            let _ = hotkey_tx.send(TrayCommand::Search);
+            hotkey_ctx.request_repaint();
+        }));
 
         let palette = Palette::new(true);
         theme::apply(&ctx, &palette);
@@ -193,6 +205,10 @@ impl SidestageApp {
             search: String::new(),
             search_open: false,
             search_focus_request: false,
+            search_selected: 0,
+            refocus_previous: false,
+            hotkey: Some(hotkey),
+            hotkey_status: sidestage_platform::hotkey::HotkeyStatus::Disabled,
             expanded_groups: HashSet::new(),
             renaming_section: None,
             pending_restore: HashMap::new(),
@@ -484,6 +500,7 @@ impl SidestageApp {
                         self.panel = None;
                     }
                 }
+                TrayCommand::Search => self.open_search(ctx),
                 TrayCommand::Quit => self.quit(ctx),
             }
         }
@@ -668,7 +685,42 @@ impl SidestageApp {
             if let Some(p) = self.panel.as_mut() {
                 p.set_keyboard_focus(self.keyboard_wanted);
             }
+            if !self.keyboard_wanted && std::mem::take(&mut self.refocus_previous) {
+                // Escape: hand focus back to what the user was doing.
+                self.backend.focus_previous();
+            }
         }
+    }
+
+    /// (Re)registers the global search shortcut from settings.
+    pub fn apply_hotkey(&mut self) {
+        let text = self.config.settings.search_shortcut.clone();
+        if let Some(h) = self.hotkey.as_mut() {
+            self.hotkey_status = h.set(&text);
+            log::info!("search shortcut {text:?}: {:?}", self.hotkey_status);
+        }
+    }
+
+    /// Global shortcut: reveal the sidebar and focus search (toggles).
+    pub fn open_search(&mut self, ctx: &egui::Context) {
+        if self.search_open && self.keyboard_granted {
+            self.search_open = false;
+            self.search.clear();
+            self.refocus_previous = true;
+            self.keyboard_wanted = false;
+            return;
+        }
+        if !self.visible {
+            self.visible = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            self.panel = None;
+        }
+        self.autohide.shown = true;
+        self.peek_until = Some(Instant::now() + Duration::from_millis(1500));
+        self.search_open = true;
+        self.search_focus_request = true;
+        self.search_selected = 0;
+        self.keyboard_wanted = true;
     }
 }
 

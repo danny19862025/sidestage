@@ -43,6 +43,8 @@ pub struct X11Backend {
     conn: Mutex<RustConnection>,
     root: Window,
     atoms: Atoms,
+    /// Last active window that is not Sidestage's own.
+    last_active: std::sync::Arc<Mutex<Option<u32>>>,
 }
 
 impl WindowBackend for X11Backend {
@@ -51,6 +53,12 @@ impl WindowBackend for X11Backend {
     }
     fn thumbnail_mode(&self) -> ThumbnailMode {
         ThumbnailMode::None
+    }
+    fn focus_previous(&self) {
+        let prev = *self.last_active.lock().unwrap();
+        if let Some(w) = prev {
+            self.restore(&WindowId(w.to_string()));
+        }
     }
     fn restore(&self, id: &WindowId) {
         let Ok(win) = id.0.parse::<u32>() else { return };
@@ -79,6 +87,8 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
         anyhow::bail!("window manager does not publish _NET_CLIENT_LIST");
     }
     let (conn, _) = x11rb::connect(None)?;
+    let last_active = std::sync::Arc::new(Mutex::new(None));
+    let last_active2 = last_active.clone();
     std::thread::Builder::new()
         .name("x11-ewmh".into())
         .spawn(move || {
@@ -92,6 +102,7 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
                 iconed: HashSet::new(),
                 resolver: AppResolver::new(tx.clone(), waker.clone()),
                 own_pid: std::process::id(),
+                last_active: last_active2,
             };
             let _ = tx.send(WindowEvent::Status(BackendStatus {
                 backend: "X11 (EWMH)".into(),
@@ -106,6 +117,7 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
         conn: Mutex::new(cmd_conn),
         root,
         atoms,
+        last_active,
     })
 }
 
@@ -119,9 +131,37 @@ struct Watcher {
     iconed: HashSet<String>,
     resolver: AppResolver,
     own_pid: u32,
+    last_active: std::sync::Arc<Mutex<Option<u32>>>,
 }
 
 impl Watcher {
+    fn note_active(&self) {
+        let win = self
+            .conn
+            .get_property(
+                false,
+                self.root,
+                self.atoms._NET_ACTIVE_WINDOW,
+                AtomEnum::WINDOW,
+                0,
+                1,
+            )
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|r| r.value32().and_then(|mut v| v.next()))
+            .filter(|w| *w != 0);
+        let Some(win) = win else { return };
+        let pid = self
+            .conn
+            .get_property(false, win, self.atoms._NET_WM_PID, AtomEnum::CARDINAL, 0, 1)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|r| r.value32().and_then(|mut v| v.next()));
+        if pid != Some(self.own_pid) {
+            *self.last_active.lock().unwrap() = Some(win);
+        }
+    }
+
     fn run(&mut self) -> Result<()> {
         self.conn.change_window_attributes(
             self.root,
@@ -135,6 +175,8 @@ impl Watcher {
                 if p.window == self.root {
                     if p.atom == self.atoms._NET_CLIENT_LIST {
                         self.sync_clients()?;
+                    } else if p.atom == self.atoms._NET_ACTIVE_WINDOW {
+                        self.note_active();
                     }
                 } else if [
                     self.atoms._NET_WM_STATE,

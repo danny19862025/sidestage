@@ -434,96 +434,200 @@ fn header(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
     if app.search_open {
         ui.add_space(4.0);
         let edit = egui::TextEdit::singleline(&mut app.search)
-            .hint_text("Search favourites")
+            .hint_text("Search apps and windows")
             .desired_width(f32::INFINITY)
             .margin(vec2(10.0, 6.0));
         let resp = ui.add(edit);
         if std::mem::take(&mut app.search_focus_request) {
             resp.request_focus();
         }
-        let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        if enter {
-            if let Some(id) = search_matches(app).first().map(|(id, _)| id.clone()) {
-                f.actions.push(Action::Launch(id));
+        if resp.changed() {
+            app.search_selected = 0;
+        }
+        let hits = search_hits(app);
+        let (enter, esc, up, down) = ui.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+                i.key_pressed(egui::Key::ArrowUp),
+                i.key_pressed(egui::Key::ArrowDown),
+            )
+        });
+        let typing = resp.has_focus() || resp.lost_focus();
+        if typing && !hits.is_empty() {
+            if down {
+                app.search_selected = (app.search_selected + 1).min(hits.len() - 1);
             }
-            app.search.clear();
-            app.search_open = false;
+            if up {
+                app.search_selected = app.search_selected.saturating_sub(1);
+            }
+        }
+        app.search_selected = app.search_selected.min(hits.len().saturating_sub(1));
+        if enter && typing {
+            if let Some(hit) = hits.get(app.search_selected) {
+                f.actions.push(hit_action(hit));
+            }
+            close_search(app, false);
         } else if esc {
-            app.search.clear();
-            app.search_open = false;
+            close_search(app, true);
         }
         let renaming = app.renaming_section.is_some();
-        app.keyboard_wanted = (resp.has_focus() || resp.clicked() || resp.gained_focus())
-            && app.search_open
-            || renaming;
+        app.keyboard_wanted =
+            (resp.has_focus() || resp.clicked() || resp.gained_focus() || app.search_focus_request)
+                && app.search_open
+                || renaming
+                || (app.search_open && app.keyboard_wanted && !resp.lost_focus());
     } else if app.renaming_section.is_none() {
         app.keyboard_wanted = false;
     }
 }
 
+/// Closes search; with `refocus` the previously focused window gets the
+/// keyboard back (Escape), otherwise the launched/restored window takes it.
+fn close_search(app: &mut SidestageApp, refocus: bool) {
+    app.search.clear();
+    app.search_open = false;
+    app.search_selected = 0;
+    app.keyboard_wanted = false;
+    app.refocus_previous = refocus;
+}
+
+fn hit_action(hit: &search::SearchHit) -> Action {
+    match hit {
+        search::SearchHit::Favourite(id) => Action::Launch(id.clone()),
+        search::SearchHit::Window(id) => Action::Restore(WindowId(id.clone())),
+    }
+}
+
+/// Favourites and minimized windows matching the query, best first.
+fn search_hits(app: &SidestageApp) -> Vec<search::SearchHit> {
+    let favs: Vec<(&str, &str, &str)> = app
+        .config
+        .sections
+        .iter()
+        .flat_map(|s| {
+            s.items
+                .iter()
+                .map(move |f| (f.id.as_str(), f.name.as_str(), s.name.as_str()))
+        })
+        .collect();
+    let wins: Vec<(&str, &str, &str)> = app
+        .groups
+        .iter()
+        .flat_map(|g| {
+            g.windows
+                .iter()
+                .map(move |w| (w.id.0.as_str(), w.title.as_str(), g.app_name.as_str()))
+        })
+        .collect();
+    search::search_all(&app.search, favs, wins)
+}
+
 // ---------------------------------------------------------------------------
 // Favourites
 
-fn search_matches(app: &SidestageApp) -> Vec<(String, u32)> {
-    let mut hits: Vec<(String, u32)> = Vec::new();
-    for s in &app.config.sections {
-        for fav in &s.items {
-            if let Some(score) = search::score_fields(&app.search, &fav.name, &[&s.name]) {
-                hits.push((fav.id.clone(), score));
-            }
-        }
-    }
-    hits.sort_by_key(|h| std::cmp::Reverse(h.1));
-    hits
-}
-
 fn search_results(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
-    let hits = search_matches(app);
+    let hits = search_hits(app);
     if hits.is_empty() {
         ui.add_space(8.0);
-        ui.label(egui::RichText::new("No favourites match.").color(f.p.text_faint));
+        ui.label(egui::RichText::new("No apps or minimized windows match.").color(f.p.text_faint));
         return;
     }
-    for (id, _) in hits {
-        let Some((si, ii)) = app.config.find(&id) else {
-            continue;
-        };
-        let fav = app.config.sections[si].items[ii].clone();
-        let section = app.config.sections[si].name.clone();
-        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click());
-        if resp.hovered() {
-            ui.painter().rect_filled(rect, 10.0, f.p.hover);
-        }
-        let px = (26.0 * app.scale * 1.5) as u32;
-        let icon_rect =
-            Rect::from_center_size(pos2(rect.left() + 21.0, rect.center().y), vec2(26.0, 26.0));
-        if let Some(tex) = app.textures.favourite(&fav, px) {
-            ui.painter().image(
-                tex.id(),
-                icon_rect,
-                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
-                Color32::WHITE,
+    let px = (26.0 * app.scale * 1.5) as u32;
+    let mut last_kind = None;
+    for (i, hit) in hits.iter().enumerate() {
+        let kind = matches!(hit, search::SearchHit::Window(_));
+        if last_kind != Some(kind) {
+            last_kind = Some(kind);
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(if kind {
+                    "Minimized windows"
+                } else {
+                    "Favourites"
+                })
+                .size(11.0)
+                .color(f.p.text_faint),
             );
         }
-        ui.painter().text(
+        let (title, subtitle, icon) = match hit {
+            search::SearchHit::Favourite(id) => {
+                let Some((si, ii)) = app.config.find(id) else {
+                    continue;
+                };
+                let fav = app.config.sections[si].items[ii].clone();
+                let section = app.config.sections[si].name.clone();
+                let tex = app.textures.favourite(&fav, px).cloned();
+                (fav.name, section, tex)
+            }
+            search::SearchHit::Window(id) => {
+                let Some((g, w)) = app
+                    .groups
+                    .iter()
+                    .find_map(|g| g.windows.iter().find(|w| w.id.0 == *id).map(|w| (g, w)))
+                else {
+                    continue;
+                };
+                // Distinguish same-titled windows of one app.
+                let same: Vec<&WindowInfo> =
+                    g.windows.iter().filter(|o| o.title == w.title).collect();
+                let mut sub = format!("{} · minimized", g.app_name);
+                if same.len() > 1 {
+                    let k = same.iter().position(|o| o.id == w.id).unwrap_or(0) + 1;
+                    sub.push_str(&format!(" · {k} of {}", same.len()));
+                }
+                (
+                    w.title.clone(),
+                    sub,
+                    app.textures.app_icon(&g.app_key).cloned(),
+                )
+            }
+        };
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+        let selected = i == app.search_selected;
+        if selected {
+            ui.painter().rect_filled(rect, 10.0, f.p.accent_soft);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(rect, 10.0, f.p.hover);
+        }
+        let icon_rect =
+            Rect::from_center_size(pos2(rect.left() + 21.0, rect.center().y), vec2(26.0, 26.0));
+        draw_icon(
+            ui.painter(),
+            icon.as_ref(),
+            icon_rect,
+            &title,
+            f.p,
+            Color32::WHITE,
+        );
+        let w = rect.width() - 50.0;
+        let painter = ui.painter();
+        let t = truncate(painter, &title, &FontId::proportional(13.0), w);
+        let st = truncate(painter, &subtitle, &FontId::proportional(10.5), w);
+        painter.text(
             pos2(rect.left() + 42.0, rect.center().y - 7.0),
             Align2::LEFT_CENTER,
-            &fav.name,
+            t,
             FontId::proportional(13.0),
             f.p.text,
         );
-        ui.painter().text(
+        painter.text(
             pos2(rect.left() + 42.0, rect.center().y + 8.0),
             Align2::LEFT_CENTER,
-            &section,
+            st,
             FontId::proportional(10.5),
             f.p.text_faint,
         );
-        if resp.on_hover_cursor(CursorIcon::PointingHand).clicked() {
-            f.actions.push(Action::Launch(fav.id.clone()));
-            app.search.clear();
-            app.search_open = false;
+        if selected {
+            ui.scroll_to_rect(rect, None);
+        }
+        if resp
+            .on_hover_text(format!("{title}\n{subtitle}"))
+            .on_hover_cursor(CursorIcon::PointingHand)
+            .clicked()
+        {
+            f.actions.push(hit_action(hit));
+            close_search(app, false);
         }
     }
 }

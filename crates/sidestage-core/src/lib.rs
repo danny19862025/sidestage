@@ -9,6 +9,7 @@ pub mod config;
 pub mod desktop_entry;
 pub mod image;
 pub mod search;
+pub mod shortcut;
 pub mod tracker;
 
 pub use config::{Config, Favourite, IconSource, LaunchTarget, Section, Settings};

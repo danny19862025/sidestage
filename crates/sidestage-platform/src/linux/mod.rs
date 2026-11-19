@@ -12,6 +12,7 @@
 
 pub mod apps;
 mod gnome;
+pub mod hotkey;
 pub mod icons;
 mod kde;
 mod kwin_screenshot;

@@ -84,6 +84,62 @@ mod imp {
                 pause(70);
                 fi.button(b, 0);
             }
+            Some("keys") | Some("type") => {
+                // `keys ctrl+alt+space` presses a chord; `type text` types it.
+                let code = |k: &str| -> Option<u32> {
+                    Some(match k {
+                        "ctrl" => 29,
+                        "alt" => 56,
+                        "shift" => 42,
+                        "meta" | "super" => 125,
+                        "space" | " " => 57,
+                        "esc" | "escape" => 1,
+                        "enter" | "return" => 28,
+                        "up" => 103,
+                        "down" => 108,
+                        "tab" => 15,
+                        "backspace" => 14,
+                        "." => 52,
+                        "-" => 12,
+                        _ if k.len() == 1 => {
+                            let c = k.chars().next()?;
+                            let row = "qwertyuiop"
+                                .find(c)
+                                .map(|i| 16 + i as u32)
+                                .or_else(|| "asdfghjkl".find(c).map(|i| 30 + i as u32))
+                                .or_else(|| "zxcvbnm".find(c).map(|i| 44 + i as u32))
+                                .or_else(|| "1234567890".find(c).map(|i| 2 + i as u32));
+                            row?
+                        }
+                        _ => return None,
+                    })
+                };
+                let arg = args.get(1).cloned().unwrap_or_default();
+                let groups: Vec<Vec<u32>> = if args[0] == "keys" {
+                    vec![arg
+                        .split('+')
+                        .filter_map(|k| code(&k.to_lowercase()))
+                        .collect()]
+                } else {
+                    arg.chars()
+                        .filter_map(|c| code(&c.to_lowercase().to_string()))
+                        .map(|c| vec![c])
+                        .collect()
+                };
+                for chord in groups {
+                    for k in &chord {
+                        fi.keyboard_key(*k, 1);
+                        sync(&mut queue);
+                        pause(20);
+                    }
+                    for k in chord.iter().rev() {
+                        fi.keyboard_key(*k, 0);
+                        sync(&mut queue);
+                        pause(20);
+                    }
+                    pause(30);
+                }
+            }
             Some("glide") => {
                 // Continuous motion like a real mouse.
                 for i in 0..=30 {

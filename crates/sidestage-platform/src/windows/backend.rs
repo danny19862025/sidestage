@@ -23,17 +23,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
     IsWindow, IsWindowVisible, SendMessageTimeoutW, SetForegroundWindow, SetTimer, ShowWindowAsync,
     TranslateMessage, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-    EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND,
-    EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON, GCLP_HICONSM, GWL_EXSTYLE, GW_OWNER,
-    HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG, SW_RESTORE,
-    SW_SHOWNOACTIVATE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON, WM_TIMER,
-    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
+    EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON, GCLP_HICONSM,
+    GWL_EXSTYLE, GW_OWNER, HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG,
+    SW_RESTORE, SW_SHOWNOACTIVATE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON,
+    WM_TIMER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::icons;
 use crate::{ThumbnailMode, Waker, WindowBackend, WindowEvent};
 
 pub struct Win32Backend;
+
+/// Most recent foreground window of another process.
+static LAST_FOREGROUND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 impl Win32Backend {
     pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Self {
@@ -71,6 +74,18 @@ impl WindowBackend for Win32Backend {
             // The click on the sidebar gives this process the foreground
             // right, so the restored window may be activated.
             let _ = SetForegroundWindow(hwnd);
+        }
+    }
+
+    fn focus_previous(&self) {
+        let prev = LAST_FOREGROUND.load(std::sync::atomic::Ordering::Relaxed);
+        if prev != 0 {
+            unsafe {
+                let hwnd = HWND(prev as *mut _);
+                if IsWindow(Some(hwnd)).as_bool() {
+                    let _ = SetForegroundWindow(hwnd);
+                }
+            }
         }
     }
 
@@ -130,6 +145,7 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
         (EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE),
         (EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE),
         (EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED),
+        (EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND),
     ];
     let hooks: Vec<HWINEVENTHOOK> = ranges
         .iter()
@@ -179,6 +195,10 @@ unsafe extern "system" fn on_event(
         let mut guard = s.borrow_mut();
         let Some(state) = guard.as_mut() else { return };
         match event {
+            // WINEVENT_SKIPOWNPROCESS: this is never the sidebar itself.
+            EVENT_SYSTEM_FOREGROUND => {
+                LAST_FOREGROUND.store(key, std::sync::atomic::Ordering::Relaxed);
+            }
             EVENT_OBJECT_DESTROY => {
                 if state.windows.remove(&key).is_some() {
                     let _ = state

@@ -38,6 +38,7 @@ pub struct SettingsUi {
     website_error: Option<String>,
     /// URL being edited for a website favourite (id, text).
     url_edit: Option<(String, String)>,
+    shortcut_edit: Option<String>,
 }
 
 pub fn viewport_id() -> ViewportId {
@@ -350,6 +351,7 @@ fn behaviour(app: &mut SidestageApp, ui: &mut Ui) {
             ui.checkbox(&mut s.launch_at_login, "");
         });
     });
+    shortcut_group(app, ui);
     if s.launch_at_login != before.launch_at_login {
         if let Err(e) = sidestage_platform::autostart::set_enabled(s.launch_at_login) {
             app.toast(format!("Couldn't change launch at login: {e}"), true);
@@ -1070,4 +1072,55 @@ fn set_icon(app: &mut SidestageApp, fid: &str, icon: IconSource) {
         f.icon = icon;
     }
     app.mark_dirty();
+}
+
+fn shortcut_group(app: &mut SidestageApp, ui: &mut Ui) {
+    use sidestage_platform::hotkey::HotkeyStatus;
+    let p = app.palette;
+    let current = app.config.settings.search_shortcut.clone();
+    let mut apply: Option<String> = None;
+    let mut buf = app
+        .settings
+        .shortcut_edit
+        .take()
+        .unwrap_or_else(|| current.clone());
+    let status = app.hotkey_status.clone();
+    group(ui, app, |ui| {
+        row(
+            ui,
+            "Search shortcut",
+            "Opens search from anywhere. Leave empty to turn it off; the search button always works.",
+            |ui| {
+                if ui.button("Apply").clicked() {
+                    apply = Some(buf.clone());
+                }
+                let resp = ui.add(egui::TextEdit::singleline(&mut buf).hint_text("Ctrl+Alt+Space").desired_width(150.0));
+                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    apply = Some(buf.clone());
+                }
+            },
+        );
+        let (text, color) = match &status {
+            HotkeyStatus::Disabled => ("Off".to_string(), p.text_faint),
+            HotkeyStatus::Registered(how) => (format!("Active: {how}"), p.text_dim),
+            HotkeyStatus::Conflict(m) => (
+                format!("Not set: {m}. Choose another combination."),
+                p.danger,
+            ),
+            HotkeyStatus::Unsupported(m) => (m.clone(), p.text_dim),
+            HotkeyStatus::Invalid(m) => (format!("Invalid: {m}"), p.danger),
+        };
+        ui.label(RichText::new(text).small().color(color));
+    });
+    app.settings.shortcut_edit = Some(buf);
+    if let Some(text) = apply {
+        let text = text.trim().to_string();
+        let normalized = sidestage_core::shortcut::Shortcut::parse(&text)
+            .map(|s| s.display())
+            .unwrap_or(text);
+        app.config.settings.search_shortcut = normalized.clone();
+        app.settings.shortcut_edit = Some(normalized);
+        app.apply_hotkey();
+        app.mark_dirty();
+    }
 }

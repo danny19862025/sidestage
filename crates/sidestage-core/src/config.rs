@@ -227,6 +227,8 @@ pub struct Settings {
     /// Milliseconds the pointer must rest at the edge before an auto-hidden
     /// sidebar slides in.
     pub reveal_delay_ms: u32,
+    /// Global shortcut that opens search (empty = off), e.g. `Ctrl+Alt+Space`.
+    pub search_shortcut: String,
 }
 
 impl Default for Settings {
@@ -244,6 +246,7 @@ impl Default for Settings {
             show_labels: true,
             animations: true,
             reveal_delay_ms: 150,
+            search_shortcut: "Ctrl+Alt+Space".into(),
         }
     }
 }

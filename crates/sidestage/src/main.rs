@@ -109,6 +109,7 @@ fn main() -> eframe::Result<()> {
             let (tx, rx) = mpsc::channel();
             guard.listen(tx, cc.egui_ctx.clone());
             app.extra_commands(rx);
+            app.apply_hotkey();
             app.textures
                 .set_app_icon(&cc.egui_ctx, "__brand", &brand::app_icon(64));
             Ok(Box::new(AppWithGuard { app, _guard: guard }))

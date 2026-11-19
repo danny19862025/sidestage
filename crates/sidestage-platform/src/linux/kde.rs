@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use sidestage_core::tracker::BackendStatus;
@@ -35,6 +35,7 @@ enum Command {
 }
 
 pub struct KdeBackend {
+    last_active: Arc<Mutex<Option<String>>>,
     cmd: Sender<Command>,
     wake: Mutex<UnixStream>,
     thumbs: bool,
@@ -54,6 +55,13 @@ impl WindowBackend for KdeBackend {
     fn restore(&self, id: &WindowId) {
         let _ = self.cmd.send(Command::Restore(id.0.clone()));
         let _ = self.wake.lock().unwrap().write_all(b"r");
+    }
+    fn focus_previous(&self) {
+        let prev = self.last_active.lock().unwrap().clone();
+        if let Some(uuid) = prev {
+            let _ = self.cmd.send(Command::Restore(uuid));
+            let _ = self.wake.lock().unwrap().write_all(b"f");
+        }
     }
     fn refresh_thumbnail(&self, id: &WindowId) {
         let _ = self.cmd.send(Command::Thumbnail(id.0.clone()));
@@ -101,6 +109,7 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
     let (thumb_tx, thumb_handle) =
         spawn_thumbnailer(shot.filter(|_| thumbs), tx.clone(), waker.clone());
 
+    let last_active = Arc::new(Mutex::new(None));
     let mut state = State {
         tx: tx.clone(),
         waker: waker.clone(),
@@ -109,6 +118,7 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
         own_pid: std::process::id(),
         resolver: AppResolver::new(tx.clone(), waker.clone()),
         thumbs: thumb_tx,
+        last_active: last_active.clone(),
         _mgr: mgr,
     };
     let _ = tx.send(WindowEvent::Status(BackendStatus {
@@ -133,6 +143,7 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
             }
         })?;
     Ok(KdeBackend {
+        last_active,
         cmd: cmd_tx,
         wake: Mutex::new(wake_w),
         thumbs,
@@ -259,6 +270,7 @@ struct State {
     own_pid: u32,
     resolver: AppResolver,
     thumbs: Option<Sender<String>>,
+    last_active: Arc<Mutex<Option<String>>>,
     _mgr: OrgKdePlasmaWindowManagement,
 }
 
@@ -378,6 +390,9 @@ impl Dispatch<OrgKdePlasmaWindow, String> for State {
             E::ThemedIconNameChanged { name } => w.icon_name = name,
             E::PidChanged { pid } => w.pid = pid,
             E::StateChanged { flags } => {
+                if flags & STATE_ACTIVE != 0 && w.pid != state.own_pid && w.pid != 0 {
+                    *state.last_active.lock().unwrap() = Some(uuid.clone());
+                }
                 // Ignore pure focus changes for non-minimized windows.
                 changed = (w.flags ^ flags) & !STATE_ACTIVE != 0;
                 w.flags = flags;
