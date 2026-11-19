@@ -29,8 +29,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowPlacement, IsIconic, PostMessageW, RegisterWindowMessageW,
     SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_BROADCAST,
     HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE,
-    HTCLIENT, SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_USER,
-    WS_EX_APPWINDOW,
+    GWL_STYLE, HTCLIENT, STYLESTRUCT, SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WM_MOUSEACTIVATE,
+    WM_NCHITTEST, WM_STYLECHANGING, WM_USER, WS_EX_APPWINDOW,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
@@ -76,6 +76,29 @@ pub fn on_instance_signal(cb: Callback) {
 static KEYBOARD_WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static APPBAR_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Frame bits winit keeps on undecorated windows (caption, resize frame,
+/// system menu, min/max boxes). With them, DWM falls back to drawing a
+/// classic frame behind the sidebar whenever a window region is set.
+const FRAME_BITS: u32 = 0x00C0_0000 | 0x0004_0000 | 0x0008_0000 | 0x0002_0000 | 0x0001_0000;
+const WS_POPUP_BIT: u32 = 0x8000_0000;
+
+/// The sidebar is a plain popup: no frame of any kind.
+fn panel_style(style: u32) -> u32 {
+    (style & !FRAME_BITS) | WS_POPUP_BIT
+}
+
+/// Tool window (no taskbar/Alt+Tab), topmost, and no-activate unless the
+/// search field or a rename wants the keyboard.
+fn panel_ex_style(ex: u32) -> u32 {
+    let mut ex = (ex | WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0) & !WS_EX_APPWINDOW.0;
+    if KEYBOARD_WANTED.load(std::sync::atomic::Ordering::Relaxed) {
+        ex &= !WS_EX_NOACTIVATE.0;
+    } else {
+        ex |= WS_EX_NOACTIVATE.0;
+    }
+    ex
+}
+
 unsafe extern "system" fn subclass_proc(
     hwnd: HWND,
     msg: u32,
@@ -84,6 +107,16 @@ unsafe extern "system" fn subclass_proc(
     _id: usize,
     _data: usize,
 ) -> LRESULT {
+    if msg == WM_STYLECHANGING && lparam.0 != 0 {
+        // winit re-applies its own styles on resize and other updates;
+        // adjust them as they are set so a frame never flashes back.
+        let ss = &mut *(lparam.0 as *mut STYLESTRUCT);
+        match wparam.0 as i32 {
+            x if x == GWL_STYLE.0 => ss.styleNew = panel_style(ss.styleNew),
+            x if x == GWL_EXSTYLE.0 => ss.styleNew = panel_ex_style(ss.styleNew),
+            _ => {}
+        }
+    }
     if msg == WM_MOUSEACTIVATE && !KEYBOARD_WANTED.load(std::sync::atomic::Ordering::Relaxed) {
         // Clicks on the sidebar must not take focus from the user's window.
         return LRESULT(MA_NOACTIVATE as isize);
@@ -171,10 +204,12 @@ impl Panel {
         };
         let hwnd = HWND(h.hwnd.get() as *mut _);
         unsafe {
+            // Subclass first so WM_STYLECHANGING keeps our styles from now on.
+            let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 0x5151, 0);
+            let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+            SetWindowLongPtrW(hwnd, GWL_STYLE, panel_style(style) as isize);
             let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-            let ex = (ex | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_TOPMOST.0)
-                & !WS_EX_APPWINDOW.0;
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, panel_ex_style(ex) as isize);
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOPMOST),
@@ -201,7 +236,6 @@ impl Panel {
                 &no_border as *const _ as *const _,
                 4,
             );
-            let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 0x5151, 0);
         }
         Ok(Panel {
             hwnd,
@@ -217,19 +251,28 @@ impl Panel {
         })
     }
 
-    /// winit rewrites the extended style when it updates the window (e.g.
-    /// on resize), dropping our tool-window/no-activate bits, which puts the
-    /// sidebar in the taskbar and Alt+Tab. Put them back when that happens.
+    /// Safety net behind WM_STYLECHANGING: if a style ever slips through
+    /// (frame bits, or losing tool-window/no-activate, which would put the
+    /// sidebar in the taskbar and Alt+Tab), put it right.
     fn keep_styles(&self) {
         unsafe {
+            let style = GetWindowLongPtrW(self.hwnd, GWL_STYLE) as u32;
             let ex = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
-            let mut want = (ex | WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0) & !WS_EX_APPWINDOW.0;
-            if !KEYBOARD_WANTED.load(std::sync::atomic::Ordering::Relaxed) {
-                want |= WS_EX_NOACTIVATE.0;
+            let (want, want_ex) = (panel_style(style), panel_ex_style(ex));
+            if want == style && want_ex == ex {
+                return;
             }
-            if want != ex {
-                SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, want as isize);
-            }
+            SetWindowLongPtrW(self.hwnd, GWL_STYLE, want as isize);
+            SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, want_ex as isize);
+            let _ = SetWindowPos(
+                self.hwnd,
+                Some(HWND_TOPMOST),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
         }
     }
 
@@ -249,7 +292,7 @@ impl Panel {
             return;
         }
         self.last = Some(g.clone());
-        let (mut x, y, mut w, h) = (g.x, g.y, g.width, g.height);
+        let (mut x, y, w, h) = (g.x, g.y, g.width, g.height);
         if g.paused {
             // Fullscreen app on this monitor: drop the AppBar and hide.
             unsafe {
@@ -268,13 +311,9 @@ impl Panel {
                 let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
             }
         }
-        if let Some(strip) = g.collapsed_strip {
-            // Auto-hidden: shrink to a strip at the screen edge.
-            if g.edge == Edge::Right {
-                x += w - strip;
-            }
-            w = strip;
-        }
+        // Auto-hidden: the window keeps its size and the sidebar clips it to
+        // the edge strip with `set_shape`. Resizing a GL window between the
+        // strip and full width flashes a stale frame on every reveal.
         unsafe {
             if g.reserve > 0 {
                 let mut abd = self.appbar_data();

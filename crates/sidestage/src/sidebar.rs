@@ -133,10 +133,16 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
             [pos2(x, mid - 70.0), pos2(x, mid + 70.0)],
             Stroke::new(3.0, palette.accent.gamma_multiply(0.9)),
         );
-        let _ = HIDDEN_STRIP;
+        // Windows keeps the full-size window and clips it to the strip
+        // (resizing it on every reveal flashes); Linux ignores the shape.
+        let ppp = ui.ctx().pixels_per_point();
+        let strip = (HIDDEN_STRIP * ppp).round().max(2.0) as i32;
+        let width_px = (full.width() * ppp).round() as i32;
+        let height_px = (full.height() * ppp).round() as i32;
+        let sx = if left { 0 } else { width_px - strip };
         if let Some(p) = app.panel.as_mut() {
             p.set_blur_region(None);
-            p.set_shape(None);
+            p.set_shape(Some(vec![[sx, 0, strip, height_px]]));
         }
         if let Some(lt) = app.panel.as_mut().and_then(|p| p.live_thumbnails()) {
             lt.begin();
@@ -172,8 +178,11 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     let bands = arch.blur_bands(full, ppp);
     // Clip the window to the arch (plus its rim and shadow) so the
     // transparent corners pass clicks through. While a menu is open it may
-    // reach past the arch, so the whole window stays live.
-    let shape = (!app.menu_open).then(|| {
+    // reach past the arch, so the whole window stays live. While sliding,
+    // leave it unclipped: a region change per frame lands out of step with
+    // the GL frame and flashes.
+    let settled = reveal >= 0.999;
+    let shape = (settled && !app.menu_open).then(|| {
         let grow = (4.0 * ppp).ceil() as i32;
         let width_px = (full.width() * ppp).round() as i32;
         bands
