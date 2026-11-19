@@ -39,6 +39,12 @@ impl Hotkey {
         Hotkey(crate::imp::hotkey::Hotkey::new(on_press))
     }
 
+    /// A status change detected in the background (e.g. the GNOME
+    /// extension was enabled after start-up), if any since the last call.
+    pub fn take_status_update(&self) -> Option<HotkeyStatus> {
+        self.0.take_status_update()
+    }
+
     /// Registers `text` (e.g. `Ctrl+Alt+Space`); an empty string disables it.
     pub fn set(&mut self, text: &str) -> HotkeyStatus {
         if text.trim().is_empty() {

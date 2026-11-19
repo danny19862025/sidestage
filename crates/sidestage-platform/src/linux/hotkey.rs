@@ -32,6 +32,9 @@ pub struct Hotkey {
     listening: bool,
     /// Current GNOME accelerator, re-applied if the extension restarts.
     gnome_accel: Arc<Mutex<Option<String>>>,
+    /// Status changes found by the GNOME listener (extension enabled or
+    /// restarted after Sidestage started).
+    async_status: Arc<Mutex<Option<HotkeyStatus>>>,
 }
 
 impl Hotkey {
@@ -42,6 +45,7 @@ impl Hotkey {
             on_press,
             listening: false,
             gnome_accel: Arc::new(Mutex::new(None)),
+            async_status: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -90,11 +94,19 @@ impl Hotkey {
             Ok(st) => st,
             Err(e) => HotkeyStatus::Unsupported(format!("{e:#}")),
         };
-        if matches!(status, HotkeyStatus::Registered(_)) && !self.listening {
+        // GNOME: listen even when the extension is missing right now, so the
+        // shortcut is registered as soon as it appears.
+        let gnome_waiting = matches!(self.kind, Kind::Gnome(_)) && s.is_some();
+        if (matches!(status, HotkeyStatus::Registered(_)) || gnome_waiting) && !self.listening {
             self.listening = true;
             self.listen();
         }
         status
+    }
+
+    /// A newer status found in the background, if any.
+    pub fn take_status_update(&self) -> Option<HotkeyStatus> {
+        self.async_status.lock().unwrap().take()
     }
 
     fn listen(&self) {
@@ -129,10 +141,14 @@ impl Hotkey {
                     .ok();
             }
             Kind::Gnome(c) => {
-                let (c, accel) = (c.clone(), self.gnome_accel.clone());
+                let (c, accel, status) = (
+                    c.clone(),
+                    self.gnome_accel.clone(),
+                    self.async_status.clone(),
+                );
                 std::thread::Builder::new()
                     .name("gnome-shortcut".into())
-                    .spawn(move || gnome_listen(c, accel, cb))
+                    .spawn(move || gnome_listen(c, accel, status, cb))
                     .ok();
             }
             Kind::X11(g) => g.listen(cb),
@@ -229,7 +245,12 @@ fn gnome_set(c: &zbus::blocking::Connection, accel: Option<String>) -> Result<Ho
     }
 }
 
-fn gnome_listen(c: zbus::blocking::Connection, accel: Arc<Mutex<Option<String>>>, cb: OnPress) {
+fn gnome_listen(
+    c: zbus::blocking::Connection,
+    accel: Arc<Mutex<Option<String>>>,
+    status: Arc<Mutex<Option<HotkeyStatus>>>,
+    cb: OnPress,
+) {
     // Re-applies the accelerator when the extension (re)appears, and
     // forwards activations.
     let mut owner: Option<String> = None;
@@ -243,8 +264,12 @@ fn gnome_listen(c: zbus::blocking::Connection, accel: Arc<Mutex<Option<String>>>
             .map(|n| n.to_string());
         if now.is_some() && now != owner {
             owner = now.clone();
-            if let Some(a) = accel.lock().unwrap().clone() {
-                let _ = gnome_set(&c, Some(a));
+            let current = accel.lock().unwrap().clone();
+            if current.is_some() {
+                let st = gnome_set(&c, current)
+                    .unwrap_or_else(|e| HotkeyStatus::Unsupported(format!("{e:#}")));
+                log::info!("GNOME extension available: search shortcut {st:?}");
+                *status.lock().unwrap() = Some(st);
             }
             let (c2, cb2) = (c.clone(), cb.clone());
             std::thread::spawn(move || {
@@ -264,8 +289,13 @@ fn gnome_listen(c: zbus::blocking::Connection, accel: Arc<Mutex<Option<String>>>
                     log::debug!("GNOME shortcut signal stream: {e:#}");
                 }
             });
-        } else if now.is_none() {
+        } else if now.is_none() && owner.is_some() {
             owner = None;
+            if accel.lock().unwrap().is_some() {
+                *status.lock().unwrap() = Some(HotkeyStatus::Unsupported(
+                    "The Sidestage GNOME extension stopped; the shortcut returns when it is enabled again.".into(),
+                ));
+            }
         }
         std::thread::sleep(std::time::Duration::from_secs(3));
     }

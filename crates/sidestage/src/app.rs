@@ -793,6 +793,7 @@ impl SidestageApp {
 
     /// Global shortcut: reveal the sidebar and focus search (toggles).
     pub fn open_search(&mut self, ctx: &egui::Context) {
+        log::info!("search shortcut pressed");
         if self.search_open && self.keyboard_granted {
             self.search_open = false;
             self.search.clear();
@@ -832,6 +833,9 @@ impl eframe::App for SidestageApp {
         self.drain_events(ctx);
         self.handle_tray(ctx);
         self.poll_background();
+        if let Some(st) = self.hotkey.as_ref().and_then(|h| h.take_status_update()) {
+            self.hotkey_status = st;
+        }
         self.close_stale_ui(ctx);
         self.update_autohide(ctx);
         self.place_panel(ctx, frame);

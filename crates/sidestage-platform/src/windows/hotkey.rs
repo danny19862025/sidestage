@@ -40,6 +40,10 @@ impl Hotkey {
         }
     }
 
+    pub fn take_status_update(&self) -> Option<HotkeyStatus> {
+        None
+    }
+
     pub fn set(&mut self, s: Option<Shortcut>) -> HotkeyStatus {
         if self.req.send(s).is_err() {
             return HotkeyStatus::Unsupported("hotkey thread stopped".into());

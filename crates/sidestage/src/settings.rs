@@ -1238,15 +1238,23 @@ fn intro(app: &mut SidestageApp, ui: &mut Ui) {
     ui.ctx().request_repaint();
     let p = app.palette;
     let rect = ui.ctx().content_rect();
-    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("settings-intro"));
-    let painter = ui.ctx().layer_painter(layer);
+    // A top-most area covering the whole window that takes every click and
+    // drag while the intro plays, so nothing underneath can be changed
+    // before it is visible.
+    let area = egui::Area::new(egui::Id::unique("settings-intro"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(rect.min)
+        .interactable(true)
+        .show(ui.ctx(), |ui| {
+            ui.set_min_size(rect.size());
+            let (_, resp) = ui.allocate_exact_size(rect.size(), egui::Sense::click_and_drag());
+            (ui.painter().clone(), resp.layer_id)
+        });
+    let (painter, layer) = area.inner;
+    ui.ctx().move_to_top(layer);
     let fade = 1.0 - smooth(0.95, DURATION, t);
     let bg = ui.visuals().window_fill;
     painter.rect_filled(rect, 0.0, bg.gamma_multiply(fade));
-    // Swallow clicks while the overlay is opaque.
-    if fade > 0.5 {
-        ui.ctx().move_to_top(layer);
-    }
     let c = rect.center() - vec2(0.0, 24.0);
     let pop = spring(smooth(0.0, 0.55, t));
     let size = 112.0 * pop;

@@ -31,6 +31,7 @@ export DISPLAY=\$(call DebugGetenv DISPLAY | sed "s/[(',)]//g")
 export XAUTHORITY=\$(call DebugGetenv XAUTHORITY | sed "s/[(',)]//g")
 echo "DISPLAY=\$DISPLAY" > "\$OUT/env.txt"
 export SIDESTAGE_CONFIG="\$OUT/config.json" RUST_LOG=\${RUST_LOG:-info,usvg=error}
+BIN="$BIN"
 "$BIN" > "\$OUT/sidestage.log" 2>&1 &
 APP=\$!
 sleep 3
