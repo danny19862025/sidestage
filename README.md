@@ -31,20 +31,38 @@ It only lists windows you minimize yourself.
   use right-click → *Move to*.
 - Click to launch. Custom names and icons (an image file, a program's icon, or
   an icon-theme name on Linux).
-- Search across all favourites (Enter launches the best match).
+- **Launch section:** right-click a section header → *Launch section* to open
+  all its favourites in order. Failures don't stop the batch and are
+  reported. Turn off *Include in section launch* for favourites that should
+  only open on click.
+- **Folders and websites:** *Add folder…* / *Add website…* in the section
+  menu or in Settings. Dropped folders, Windows `.url` files and Linux link
+  `.desktop` files also work. Folders open in the file manager, sites in
+  the default browser (http/https only).
 - Favourites are shortcuts, so they stay put whether the app is running or not.
 
 **Minimized windows**
 - A card appears only when you minimize a window. It shows a preview, the app
   icon and the window title, and disappears when the window is restored or
   closed.
-- Click to restore and focus that exact window.
+- Click to restore and focus that exact window. Right-click a stack →
+  *Restore all windows* (the most recently minimized ends up focused).
 - Several minimized windows from one app form a stack; click to expand it.
 - Previews are live on Windows (DWM) and still snapshots taken at minimize time
   on KDE and GNOME. If no preview is available, a clear icon-and-title card is shown
   instead.
 
+**Search and shortcut**
+- One search over favourites and minimized windows (title and app name).
+  Use ↑/↓ to select, Enter to launch or restore, and Esc to close and hand
+  focus back.
+- Global shortcut (default **Ctrl+Alt+Space**, configurable in Settings →
+  Behaviour). Conflicts are reported, with the owner named on KDE.
+
 **Behaviour and appearance**
+- *Pause in fullscreen* (on by default): while a fullscreen app covers the
+  sidebar's monitor, the sidebar, its edge reveal and its reserved space
+  step aside.
 - Rounded floating card, light/dark/system theme, subtle animations.
 - Adjustable sidebar width, icon size and preview height.
 - Left or right edge, choice of monitor, follows display scaling.
@@ -122,6 +140,23 @@ Where something is compositor-specific, and why:
   window as it looked when minimized, which is also what a minimized window
   shows. KWin's PipeWire window screencast (`zkde_screencast`) could make them
   live later.
+
+## Feature support by platform (0.2)
+
+| Feature | Windows 11 | KDE Plasma Wayland | GNOME Wayland (+ extension) | X11 / EWMH |
+|---|---|---|---|---|
+| Launch section, folders, websites | built, **untested** | ✅ verified | ✅ (shared code; launch path verified on KDE) | ✅ (shared code) |
+| Restore all windows in a stack | built, **untested** | ✅ verified (UI) | ✅ verified (backend) | ✅ verified (backend) |
+| Combined search, Enter/Esc, focus hand-back | built, **untested** | ✅ verified (real key events) | ✅ verified (real key events) | built, untested |
+| Global shortcut + conflict detection | `RegisterHotKey`, **untested** | ✅ KGlobalAccel, verified | ✅ extension, verified | `XGrabKey`, untested |
+| Pause in fullscreen | foreground-covers-monitor, **untested** | ✅ verified (2 monitors) | ✅ verified (2 monitors) | ✅ verified (detection) |
+
+Browsers can't drop links straight onto the sidebar: winit, the
+windowing library, accepts only file drops. Drag the link to the
+desktop first (which creates a `.url` or `.desktop` file), or use
+*Add website…*. Wayland desktops other than KDE and GNOME have no
+verifiable global-shortcut API, so Settings says so and the search button
+remains.
 
 ## Build and run
 
