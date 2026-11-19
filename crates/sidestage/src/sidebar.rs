@@ -107,6 +107,7 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         // Fullscreen app on this monitor: draw nothing at all.
         if let Some(p) = app.panel.as_mut() {
             p.set_blur_region(None);
+            p.set_shape(None);
             if let Some(lt) = p.live_thumbnails() {
                 lt.begin();
                 lt.end();
@@ -135,6 +136,7 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         let _ = HIDDEN_STRIP;
         if let Some(p) = app.panel.as_mut() {
             p.set_blur_region(None);
+            p.set_shape(None);
         }
         if let Some(lt) = app.panel.as_mut().and_then(|p| p.live_thumbnails()) {
             lt.begin();
@@ -166,9 +168,27 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     let card = arch.body;
     // Follow the shape on every frame (also while it slides and swells) so
     // the frost never lags behind or pops in after the animation.
-    let blur = (reveal > 0.01).then(|| arch.blur_bands(full, ui.ctx().pixels_per_point()));
+    let ppp = ui.ctx().pixels_per_point();
+    let bands = arch.blur_bands(full, ppp);
+    // Clip the window to the arch (plus its rim and shadow) so the
+    // transparent corners pass clicks through. While a menu is open it may
+    // reach past the arch, so the whole window stays live.
+    let shape = (!app.menu_open).then(|| {
+        let grow = (4.0 * ppp).ceil() as i32;
+        let width_px = (full.width() * ppp).round() as i32;
+        bands
+            .iter()
+            .map(|&[x, y, w, h]| {
+                let w2 = (w + grow).min(width_px);
+                let x2 = if left { x } else { width_px - w2 };
+                [x2, y, w2, h]
+            })
+            .collect::<Vec<_>>()
+    });
+    let blur = (reveal > 0.01).then_some(bands);
     if let Some(p) = app.panel.as_mut() {
         p.set_blur_region(blur);
+        p.set_shape(shape);
     }
 
     let mut f = Frame {

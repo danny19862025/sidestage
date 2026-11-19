@@ -584,6 +584,10 @@ impl Panel {
         }
     }
 
+    /// Window shaping is a Windows feature; Linux narrows the input shape
+    /// only while auto-hidden.
+    pub fn set_shape(&mut self, _rects: Option<Vec<[i32; 4]>>) {}
+
     /// KWin's blur effect reads `_KDE_NET_WM_BLUR_BEHIND_REGION` (also for
     /// XWayland windows). An empty value would blur the whole window, so
     /// "off" deletes the property.

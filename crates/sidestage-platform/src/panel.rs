@@ -101,6 +101,14 @@ impl Panel {
         self.0.set_blur_region(rects)
     }
 
+    /// Clip the window (drawing and pointer input) to these rectangles
+    /// (physical px, `[x, y, w, h]`), or `None` for the whole window, so the
+    /// transparent area around the drawn shape lets clicks through.
+    /// Windows only; elsewhere a no-op.
+    pub fn set_shape(&mut self, rects: Option<Vec<[i32; 4]>>) {
+        self.0.set_shape(rects)
+    }
+
     /// Releases reserved space (call before exit).
     pub fn detach(&mut self) {
         self.0.detach()

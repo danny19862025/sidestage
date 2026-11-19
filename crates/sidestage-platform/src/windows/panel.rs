@@ -11,12 +11,14 @@ use windows::core::{BOOL, HSTRING};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmQueryThumbnailSourceSize, DwmRegisterThumbnail, DwmSetWindowAttribute,
-    DwmUnregisterThumbnail, DwmUpdateThumbnailProperties, DWMWA_WINDOW_CORNER_PREFERENCE,
+    DwmUnregisterThumbnail, DwmUpdateThumbnailProperties, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+    DWMWA_WINDOW_CORNER_PREFERENCE,
     DWMWCP_DONOTROUND, DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION,
     DWM_TNP_RECTSOURCE, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
 };
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
+    CombineRgn, CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, SetWindowRgn,
+    HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, RGN_OR,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Shell::{
@@ -27,7 +29,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowPlacement, IsIconic, PostMessageW, RegisterWindowMessageW,
     SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_BROADCAST,
     HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE,
-    SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_USER, WS_EX_APPWINDOW,
+    HTCLIENT, SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_USER,
+    WS_EX_APPWINDOW,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
@@ -84,6 +87,13 @@ unsafe extern "system" fn subclass_proc(
     if msg == WM_MOUSEACTIVATE && !KEYBOARD_WANTED.load(std::sync::atomic::Ordering::Relaxed) {
         // Clicks on the sidebar must not take focus from the user's window.
         return LRESULT(MA_NOACTIVATE as isize);
+    }
+    if msg == WM_NCHITTEST {
+        // The undecorated window keeps WS_THICKFRAME, so its outer pixels
+        // hit-test as resize borders. The sidebar never resizes, and the
+        // auto-hide strip is only a few pixels wide: treat it all as client
+        // so the pointer at the very screen edge reveals the sidebar.
+        return LRESULT(HTCLIENT as isize);
     }
     if msg == APPBAR_CALLBACK && wparam.0 as u32 == ABN_POSCHANGED {
         APPBAR_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -149,6 +159,8 @@ pub struct Panel {
     last: Option<PanelGeometry>,
     appbar: bool,
     hidden: bool,
+    /// Last window region sent (`None` = never set).
+    shape: Option<Option<Vec<[i32; 4]>>>,
     thumbs: DwmThumbs,
 }
 
@@ -180,6 +192,15 @@ impl Panel {
                 &pref as *const _ as *const _,
                 4,
             );
+            // Windows 11 also draws a 1px border round every framed window,
+            // which shows as a ghost outline round our transparent window.
+            let no_border = DWMWA_COLOR_NONE;
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR,
+                &no_border as *const _ as *const _,
+                4,
+            );
             let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 0x5151, 0);
         }
         Ok(Panel {
@@ -187,12 +208,29 @@ impl Panel {
             last: None,
             appbar: false,
             hidden: false,
+            shape: None,
             thumbs: DwmThumbs {
                 dest: hwnd,
                 map: HashMap::new(),
                 used: HashSet::new(),
             },
         })
+    }
+
+    /// winit rewrites the extended style when it updates the window (e.g.
+    /// on resize), dropping our tool-window/no-activate bits, which puts the
+    /// sidebar in the taskbar and Alt+Tab. Put them back when that happens.
+    fn keep_styles(&self) {
+        unsafe {
+            let ex = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
+            let mut want = (ex | WS_EX_TOOLWINDOW.0 | WS_EX_TOPMOST.0) & !WS_EX_APPWINDOW.0;
+            if !KEYBOARD_WANTED.load(std::sync::atomic::Ordering::Relaxed) {
+                want |= WS_EX_NOACTIVATE.0;
+            }
+            if want != ex {
+                SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, want as isize);
+            }
+        }
     }
 
     fn appbar_data(&self) -> APPBARDATA {
@@ -205,6 +243,7 @@ impl Panel {
     }
 
     pub fn apply(&mut self, g: &PanelGeometry) {
+        self.keep_styles();
         let dirty = APPBAR_DIRTY.swap(false, std::sync::atomic::Ordering::Relaxed);
         if self.last.as_ref() == Some(g) && !dirty {
             return;
@@ -268,8 +307,14 @@ impl Panel {
                     abd.rc.left = abd.rc.right - g.reserve;
                 }
                 SHAppBarMessage(ABM_SETPOS, &mut abd);
-                x = abd.rc.left;
-                w = abd.rc.right - abd.rc.left;
+                // The AppBar reserves only the body; the window keeps its
+                // full width so the arch's swell can float over other
+                // windows. Follow the shell's position, not its width.
+                x = if g.edge == Edge::Left {
+                    abd.rc.left
+                } else {
+                    abd.rc.right - w
+                };
             } else if self.appbar {
                 let mut abd = self.appbar_data();
                 SHAppBarMessage(ABM_REMOVE, &mut abd);
@@ -296,6 +341,34 @@ impl Panel {
     }
 
     pub fn set_blur_region(&mut self, _rects: Option<Vec<[i32; 4]>>) {}
+
+    /// Clips the window to the arch with a window region, so the
+    /// transparent corners around it pass clicks to the windows below.
+    pub fn set_shape(&mut self, rects: Option<Vec<[i32; 4]>>) {
+        if self.shape.as_ref() == Some(&rects) {
+            return;
+        }
+        unsafe {
+            match &rects {
+                Some(v) if !v.is_empty() => {
+                    let rgn = CreateRectRgn(0, 0, 0, 0);
+                    for r in v {
+                        let part = CreateRectRgn(r[0], r[1], r[0] + r[2], r[1] + r[3]);
+                        CombineRgn(Some(rgn), Some(rgn), Some(part), RGN_OR);
+                        let _ = DeleteObject(part.into());
+                    }
+                    // On success the system owns the region.
+                    if SetWindowRgn(self.hwnd, Some(rgn), true) == 0 {
+                        let _ = DeleteObject(rgn.into());
+                    }
+                }
+                _ => {
+                    SetWindowRgn(self.hwnd, None, true);
+                }
+            }
+        }
+        self.shape = Some(rects);
+    }
 
     /// Foreground activation already gives keyboard focus on Windows.
     pub fn claim_keyboard(&mut self) {}
