@@ -11,6 +11,16 @@ by macOS Stage Manager but organised your way:
 Sidestage does **not** hide or rearrange other windows when you switch apps.
 It only lists windows you minimize yourself.
 
+### Windows 11
+
+| Dark theme, live preview of a minimized window | Light theme |
+|---|---|
+| ![Sidestage on Windows 11, dark theme](docs/screenshots/windows-dark.png) | ![Sidestage on Windows 11, light theme](docs/screenshots/windows-light.png) |
+
+![Settings on Windows 11: favourites and sections](docs/screenshots/windows-settings.png)
+
+### Linux
+
 | KDE Plasma (dark, minimized windows stacked per app) | Expanded stack |
 |---|---|
 | ![KDE dark](docs/screenshots/kde-dark.png) | ![Expanded stack](docs/screenshots/kde-expanded-stack.png) |
