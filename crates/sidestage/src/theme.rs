@@ -27,8 +27,8 @@ impl Palette {
         if dark {
             Palette {
                 dark,
-                surface: Color32::from_rgba_unmultiplied(28, 29, 34, 238),
-                raised: Color32::from_rgb(44, 46, 54),
+                surface: Color32::from_rgba_unmultiplied(22, 23, 30, 178),
+                raised: Color32::from_rgba_unmultiplied(52, 55, 66, 170),
                 hover: Color32::from_rgba_unmultiplied(255, 255, 255, 18),
                 pressed: Color32::from_rgba_unmultiplied(255, 255, 255, 30),
                 border: Color32::from_rgba_unmultiplied(255, 255, 255, 22),
@@ -44,8 +44,8 @@ impl Palette {
         } else {
             Palette {
                 dark,
-                surface: Color32::from_rgba_unmultiplied(246, 247, 250, 242),
-                raised: Color32::from_rgb(255, 255, 255),
+                surface: Color32::from_rgba_unmultiplied(246, 247, 252, 188),
+                raised: Color32::from_rgba_unmultiplied(255, 255, 255, 190),
                 hover: Color32::from_rgba_unmultiplied(20, 30, 60, 14),
                 pressed: Color32::from_rgba_unmultiplied(20, 30, 60, 26),
                 border: Color32::from_rgba_unmultiplied(20, 30, 60, 24),

@@ -22,8 +22,9 @@ use crate::tray::{Tray, TrayCommand};
 
 /// Width of the strip left at the screen edge while auto-hidden (logical px).
 pub const HIDDEN_STRIP: f32 = 6.0;
-/// Gap between the floating card and the window edges (logical px).
-pub const OUTER_MARGIN: f32 = 8.0;
+/// Extra window width beyond the sidebar body, used by the arch's curved
+/// inner edge (logical px).
+pub const OUTER_MARGIN: f32 = 30.0;
 
 #[derive(Default)]
 pub struct AutoHide {

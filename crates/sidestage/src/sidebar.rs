@@ -87,6 +87,9 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
             Stroke::new(3.0, palette.accent.gamma_multiply(0.9)),
         );
         let _ = HIDDEN_STRIP;
+        if let Some(p) = app.panel.as_mut() {
+            p.set_blur_region(None);
+        }
         if let Some(lt) = app.panel.as_mut().and_then(|p| p.live_thumbnails()) {
             lt.begin();
             lt.end();
@@ -95,43 +98,24 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     }
 
     let slide = (1.0 - reveal) * (settings.width + OUTER_MARGIN) * if left { -1.0 } else { 1.0 };
-    let card = Rect::from_min_max(
-        pos2(
-            full.left()
-                + if left {
-                    OUTER_MARGIN * 0.75
-                } else {
-                    OUTER_MARGIN * 0.5
-                },
-            full.top() + OUTER_MARGIN,
-        ),
-        pos2(
-            full.right()
-                - if left {
-                    OUTER_MARGIN * 0.5
-                } else {
-                    OUTER_MARGIN * 0.75
-                },
-            full.bottom() - OUTER_MARGIN,
-        ),
-    )
-    .translate(vec2(slide, 0.0));
     let painter = ui.painter().clone();
-    painter.add(palette.card_shadow().as_shape(card, CornerRadius::same(18)));
-    painter.rect(
-        card,
-        18.0,
-        palette.surface,
-        Stroke::new(1.0, palette.border),
-        StrokeKind::Inside,
-    );
+    let arch = Arch::new(full, left, slide);
+    arch.paint(&painter, &palette);
+    let card = arch.body;
+    let blur = (reveal >= 0.999).then(|| arch.blur_bands(full, ui.ctx().pixels_per_point()));
+    if let Some(p) = app.panel.as_mut() {
+        p.set_blur_region(blur);
+    }
 
     let mut f = Frame {
         actions: Vec::new(),
         drop_targets: Vec::new(),
         p: &palette,
     };
-    let inner = card.shrink2(vec2(10.0, 10.0));
+    let inner = Rect::from_min_max(
+        card.min + vec2(if left { 12.0 } else { 6.0 }, 14.0),
+        card.max - vec2(if left { 6.0 } else { 12.0 }, 14.0),
+    );
     let mut ui = ui.new_child(
         UiBuilder::new()
             .max_rect(inner)
@@ -1439,4 +1423,93 @@ fn toast(app: &SidestageApp, painter: &egui::Painter, card: Rect) {
         galley,
         Color32::WHITE.gamma_multiply(alpha),
     );
+}
+
+// ---------------------------------------------------------------------------
+// The arch: flush with the screen edge, rounded top and bottom, and an inner
+// edge that bows gently toward the middle of the screen.
+
+/// How far the inner edge bulges at mid-height (logical px).
+const ARCH_BULGE: f32 = 24.0;
+const ARCH_RADIUS: f32 = 44.0;
+
+struct Arch {
+    /// Bounding box of the straight part; content lives here.
+    body: Rect,
+    points: Vec<Pos2>,
+    left: bool,
+}
+
+impl Arch {
+    fn new(full: Rect, left: bool, slide: f32) -> Arch {
+        let top = full.top() + 6.0;
+        let bottom = full.bottom() - 6.0;
+        let inner = full.width() - OUTER_MARGIN + 2.0; // straight inner edge, from the screen edge
+        let r = ARCH_RADIUS.min((bottom - top) / 4.0);
+        // Build for the left edge, in window-local x (0 = screen edge).
+        let mut pts: Vec<(f32, f32)> = vec![(0.0, top)];
+        let steps = 10;
+        for i in 0..=steps {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
+            pts.push((inner - r + r * a.cos(), top + r + r * a.sin()));
+        }
+        let curve_steps = 48;
+        let (y0, y1) = (top + r, bottom - r);
+        for i in 1..curve_steps {
+            let t = i as f32 / curve_steps as f32;
+            pts.push((inner + ARCH_BULGE * (t * std::f32::consts::PI).sin(), y0 + (y1 - y0) * t));
+        }
+        for i in 0..=steps {
+            let a = i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
+            pts.push((inner - r + r * a.cos(), bottom - r + r * a.sin()));
+        }
+        pts.push((0.0, bottom));
+        let map = |(x, y): (f32, f32)| {
+            let x = if left { full.left() + x } else { full.right() - x };
+            pos2(x + slide, y)
+        };
+        let points: Vec<Pos2> = pts.into_iter().map(map).collect();
+        let body = Rect::from_min_max(map((0.0, top)), map((inner, bottom)));
+        let body = Rect::from_two_pos(body.min, body.max);
+        Arch { body, points, left }
+    }
+
+    fn paint(&self, painter: &egui::Painter, p: &Palette) {
+        // Soft glow/shadow along the curved edge only (the edge side is flush).
+        let edge: Vec<Pos2> = self.points[1..self.points.len() - 1].to_vec();
+        let dir = if self.left { 1.0 } else { -1.0 };
+        let shifted: Vec<Pos2> = edge.iter().map(|q| pos2(q.x + dir * 1.5, q.y)).collect();
+        painter.add(egui::Shape::line(shifted, Stroke::new(3.0, p.shadow.gamma_multiply(0.45))));
+        painter.add(egui::epaint::PathShape::convex_polygon(self.points.clone(), p.surface, Stroke::NONE));
+        // Thin light rim reads as glass on both themes.
+        let rim = if p.dark { Color32::from_white_alpha(34) } else { Color32::from_white_alpha(170) };
+        painter.add(egui::Shape::line(edge, Stroke::new(1.2, rim)));
+    }
+
+    /// Horizontal bands approximating the shape, in physical window pixels,
+    /// for the compositor's blur-behind region.
+    fn blur_bands(&self, full: Rect, ppp: f32) -> Vec<[i32; 4]> {
+        let ys = (self.body.top() as i32..self.body.bottom() as i32).step_by(6);
+        let mut out = Vec::new();
+        for y in ys {
+            let (y0, y1) = (y as f32, (y + 6) as f32);
+            // Narrowest extent of the shape within this band.
+            let mut reach = f32::MAX;
+            for w in self.points.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                if (a.y.max(b.y) >= y0) && (a.y.min(b.y) <= y1) {
+                    let x = if self.left { a.x.min(b.x) - full.left() } else { full.right() - a.x.max(b.x) };
+                    if x > 1.0 {
+                        reach = reach.min(x);
+                    }
+                }
+            }
+            if reach == f32::MAX {
+                continue;
+            }
+            let x = if self.left { 0.0 } else { full.width() - reach };
+            out.push([(x * ppp) as i32, ((y0 - full.top()) * ppp) as i32, (reach * ppp).ceil() as i32, (6.0 * ppp).ceil() as i32]);
+        }
+        out
+    }
 }

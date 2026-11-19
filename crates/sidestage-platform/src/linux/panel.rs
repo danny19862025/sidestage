@@ -34,6 +34,7 @@ x11rb::atom_manager! {
         _NET_ACTIVE_WINDOW,
         _NET_WORKAREA,
         WM_HINTS,
+        _KDE_NET_WM_BLUR_BEHIND_REGION,
     }
 }
 
@@ -147,6 +148,7 @@ pub struct Panel {
     inside: Option<bool>,
     sensor: Option<super::pointer_sensor::PointerSensor>,
     sensor_tried: bool,
+    blur: Option<Option<Vec<[i32; 4]>>>,
 }
 
 impl Panel {
@@ -177,6 +179,7 @@ impl Panel {
             inside: None,
             sensor: None,
             sensor_tried: false,
+            blur: None,
         };
         p.init()?;
         Ok(p)
@@ -466,6 +469,25 @@ impl Panel {
         if let Err(e) = r {
             log::warn!("focus change failed: {e:#}");
         }
+    }
+
+    /// KWin's blur effect reads `_KDE_NET_WM_BLUR_BEHIND_REGION` (also for
+    /// XWayland windows). An empty value would blur the whole window, so
+    /// "off" deletes the property.
+    pub fn set_blur_region(&mut self, rects: Option<Vec<[i32; 4]>>) {
+        if self.blur.as_ref() == Some(&rects) {
+            return;
+        }
+        let atom = self.atoms._KDE_NET_WM_BLUR_BEHIND_REGION;
+        let r = match &rects {
+            Some(v) if !v.is_empty() => {
+                let data: Vec<u32> = v.iter().flat_map(|r| r.iter().map(|x| (*x).max(0) as u32)).collect();
+                self.conn.change_property32(PropMode::REPLACE, self.window, atom, AtomEnum::CARDINAL, &data).map(|_| ())
+            }
+            _ => self.conn.delete_property(self.window, atom).map(|_| ()),
+        };
+        let _ = r.and_then(|_| self.conn.flush());
+        self.blur = Some(rects);
     }
 
     pub fn live_thumbnails(&mut self) -> Option<&mut dyn LiveThumbnails> {

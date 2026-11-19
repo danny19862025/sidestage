@@ -86,6 +86,12 @@ impl Panel {
         self.0.pointer_inside()
     }
 
+    /// Blur the desktop behind these window rectangles (physical px,
+    /// `[x, y, w, h]`), or turn blur off. KDE only; elsewhere a no-op.
+    pub fn set_blur_region(&mut self, rects: Option<Vec<[i32; 4]>>) {
+        self.0.set_blur_region(rects)
+    }
+
     /// Releases reserved space (call before exit).
     pub fn detach(&mut self) {
         self.0.detach()

@@ -275,6 +275,8 @@ impl Panel {
         }
     }
 
+    pub fn set_blur_region(&mut self, _rects: Option<Vec<[i32; 4]>>) {}
+
     /// Win32 delivers WM_MOUSELEAVE reliably through winit; no override.
     pub fn pointer_inside(&mut self) -> Option<bool> {
         None
