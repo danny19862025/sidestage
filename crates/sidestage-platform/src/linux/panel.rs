@@ -149,6 +149,8 @@ pub struct Panel {
     sensor: Option<super::pointer_sensor::PointerSensor>,
     sensor_tried: bool,
     blur: Option<Option<Vec<[i32; 4]>>>,
+    /// KDE: script that keeps the sidebar on all virtual desktops.
+    sticky: Option<super::kwin_script::KwinScript>,
 }
 
 impl Panel {
@@ -180,6 +182,7 @@ impl Panel {
             sensor: None,
             sensor_tried: false,
             blur: None,
+            sticky: None,
         };
         p.init()?;
         Ok(p)
@@ -284,6 +287,36 @@ impl Panel {
         Ok(())
     }
 
+    /// The WM may assign the dock to one desktop when it manages it (KWin
+    /// overwrites `_NET_WM_DESKTOP` on map); ask again until it sticks.
+    fn ensure_all_desktops(&mut self) {
+        if self.sticky.is_none() && super::is_desktop("KDE") {
+            match super::kwin_script::sticky_sidebar() {
+                Ok(s) => self.sticky = Some(s),
+                Err(e) => log::warn!("cannot keep the sidebar on all desktops: {e:#}"),
+            }
+        }
+        const ALL: u32 = 0xFFFF_FFFF;
+        let current = self
+            .conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_DESKTOP,
+                AtomEnum::CARDINAL,
+                0,
+                1,
+            )
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|r| r.value32().and_then(|mut v| v.next()));
+        if current.is_some() && current != Some(ALL) {
+            log::debug!("sidebar is on desktop {current:?}; asking for all desktops");
+            let _ = self.send_wm(self.atoms._NET_WM_DESKTOP, [ALL, 2, 0, 0, 0]);
+            let _ = self.conn.flush();
+        }
+    }
+
     /// Actual position/size of the window (root coordinates).
     fn actual(&self) -> Option<(i32, i32, i32, i32)> {
         let geo = self.conn.get_geometry(self.window).ok()?.reply().ok()?;
@@ -309,6 +342,7 @@ impl Panel {
                 return;
             }
             self.verified_at = std::time::Instant::now();
+            self.ensure_all_desktops();
             if self.actual() == Some((g.x, g.y, g.width.max(1), g.height.max(1))) {
                 return;
             }
@@ -562,6 +596,7 @@ impl Panel {
     }
 
     pub fn detach(&mut self) {
+        self.sticky = None;
         if let Some(r) = self.reserver.as_mut() {
             r.set(None);
         } else if super::wayland_display().is_some() {

@@ -16,6 +16,7 @@ pub mod hotkey;
 pub mod icons;
 mod kde;
 mod kwin_screenshot;
+mod kwin_script;
 pub mod panel;
 mod pointer_sensor;
 mod reserve;
