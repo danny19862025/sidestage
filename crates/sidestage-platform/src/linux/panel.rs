@@ -360,10 +360,14 @@ impl Panel {
                     1.0
                 };
                 let l = |v: i32| (v as f32 / s).round() as i32;
-                sensor.set_rect(
-                    g.auto_hide
-                        .then(|| [l(g.x), l(g.y), l(g.width), l(g.height)]),
-                );
+                // Collapsed: only the edge strip reveals the sidebar.
+                // Revealed: the whole sidebar keeps it open.
+                let (x, w) = match g.collapsed_strip {
+                    Some(strip) if g.edge == Edge::Left => (g.x, strip),
+                    Some(strip) => (g.x + g.width - strip, strip),
+                    None => (g.x, g.width),
+                };
+                sensor.set_rect(g.auto_hide.then(|| [l(x), l(g.y), l(w).max(1), l(g.height)]));
             }
         }
         self.conn.configure_window(

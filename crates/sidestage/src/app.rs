@@ -43,6 +43,7 @@ pub struct SidestageApp {
     pub config: Config,
     config_path: PathBuf,
     dirty_since: Option<Instant>,
+    peek_until: Option<Instant>,
 
     pub tracker: WindowTracker,
     pub groups: Vec<WindowGroup>,
@@ -142,6 +143,7 @@ impl SidestageApp {
             config,
             config_path,
             dirty_since: None,
+            peek_until: None,
             tracker: WindowTracker::new(),
             groups: Vec::new(),
             groups_gen: u64::MAX,
@@ -184,6 +186,7 @@ impl SidestageApp {
 
     pub fn mark_dirty(&mut self) {
         self.dirty_since.get_or_insert_with(Instant::now);
+        self.peek_until = Some(Instant::now() + Duration::from_millis(2500));
     }
 
     pub fn save_now(&mut self) {
@@ -356,7 +359,12 @@ impl SidestageApp {
         // the panel's own Enter/Leave tracking wins when it has an answer.
         let platform_hover = self.panel.as_mut().and_then(|p| p.pointer_inside());
         let hovering = files || platform_hover.unwrap_or(toolkit_hover);
+        // Stay visible while Settings is open or right after a change, so
+        // edits (e.g. newly added favourites) are visible.
+        let peeking = self.peek_until.map(|t| Instant::now() < t).unwrap_or(false);
         let busy = self.keyboard_wanted
+            || self.settings_open
+            || peeking
             || self.menu_open
             || ctx.dragged_id().is_some()
             || self.renaming_section.is_some();

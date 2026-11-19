@@ -77,9 +77,14 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
             full.right() - 1.5
         };
         let mid = full.center().y;
+        // A full-height hint plus a brighter grip in the middle.
         ui.painter().line_segment(
-            [pos2(x, mid - 40.0), pos2(x, mid + 40.0)],
-            Stroke::new(3.0, palette.accent.gamma_multiply(0.55)),
+            [pos2(x, full.top() + 8.0), pos2(x, full.bottom() - 8.0)],
+            Stroke::new(3.0, palette.accent.gamma_multiply(0.25)),
+        );
+        ui.painter().line_segment(
+            [pos2(x, mid - 70.0), pos2(x, mid + 70.0)],
+            Stroke::new(3.0, palette.accent.gamma_multiply(0.9)),
         );
         let _ = HIDDEN_STRIP;
         if let Some(lt) = app.panel.as_mut().and_then(|p| p.live_thumbnails()) {
