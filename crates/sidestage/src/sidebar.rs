@@ -58,6 +58,35 @@ struct Frame<'a> {
     actions: Vec<Action>,
     drop_targets: Vec<DropTarget>,
     p: &'a Palette,
+    /// Linear reveal progress (1 = fully shown).
+    reveal: f32,
+    opening: bool,
+}
+
+fn ease_out_cubic(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(3)
+}
+
+/// Damped spring from 0 to 1 with a small overshoot.
+fn spring(t: f32) -> f32 {
+    if t >= 1.0 {
+        return 1.0;
+    }
+    1.0 - (-6.5 * t).exp() * (11.0 * t).cos()
+}
+
+/// Opacity for content at `order` (0 = top, 1 = bottom) while revealing,
+/// so sections fade in one after another.
+fn stagger(f: &Frame, order: f32) -> f32 {
+    if f.reveal >= 1.0 {
+        return 1.0;
+    }
+    if !f.opening {
+        return (f.reveal * 1.6).clamp(0.0, 1.0);
+    }
+    let start = 0.28 + 0.38 * order.clamp(0.0, 1.0);
+    let x = ((f.reveal - start) / 0.34).clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
 }
 
 pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
@@ -97,9 +126,21 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         return;
     }
 
-    let slide = (1.0 - reveal) * (settings.width + OUTER_MARGIN) * if left { -1.0 } else { 1.0 };
+    // Opening: the body glides out (ease-out), the arch's swell springs into
+    // shape, then content fades in top to bottom. Closing: quick ease-in.
+    let opening = app.wants_shown();
+    let anim = settings.animations;
+    let glide = if opening { ease_out_cubic(reveal) } else { reveal * reveal * reveal };
+    let swell = if !anim {
+        1.0
+    } else if opening {
+        spring(((reveal - 0.12) / 0.88).clamp(0.0, 1.0)).min(1.07)
+    } else {
+        reveal
+    };
+    let slide = (1.0 - glide) * (settings.width + OUTER_MARGIN) * if left { -1.0 } else { 1.0 };
     let painter = ui.painter().clone();
-    let arch = Arch::new(full, left, slide);
+    let arch = Arch::new(full, left, slide, swell);
     arch.paint(&painter, &palette);
     let card = arch.body;
     let blur = (reveal >= 0.999).then(|| arch.blur_bands(full, ui.ctx().pixels_per_point()));
@@ -111,10 +152,14 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         actions: Vec::new(),
         drop_targets: Vec::new(),
         p: &palette,
+        reveal: if anim { reveal } else { 1.0 },
+        opening,
     };
+    // Content trails the panel slightly.
+    let lag = (1.0 - stagger(&f, 0.0)) * 18.0 * if left { -1.0 } else { 1.0 };
     let inner = Rect::from_min_max(
-        card.min + vec2(if left { 12.0 } else { 6.0 }, 14.0),
-        card.max - vec2(if left { 6.0 } else { 12.0 }, 14.0),
+        card.min + vec2(if left { 12.0 } else { 6.0 } + lag, 14.0),
+        card.max - vec2(if left { 6.0 } else { 12.0 } - lag, 14.0),
     );
     let mut ui = ui.new_child(
         UiBuilder::new()
@@ -123,7 +168,10 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     );
     ui.set_clip_rect(card);
 
-    header(app, &mut ui, &mut f);
+    ui.scope(|ui| {
+        ui.set_opacity(stagger(&f, 0.0));
+        header(app, ui, &mut f);
+    });
     ui.add_space(4.0);
 
     // Favourites take what they need, up to half the height when windows
@@ -148,7 +196,11 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
             }
         });
 
-    minimized_area(app, &mut ui, &mut f);
+    let a = stagger(&f, 1.0);
+    ui.scope(|ui| {
+        ui.set_opacity(a);
+        minimized_area(app, ui, &mut f);
+    });
 
     handle_fav_drag(&ctx, &painter, &mut f);
     handle_os_drop(app, &ctx, &painter, card, &mut f);
@@ -452,7 +504,11 @@ fn search_results(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
 fn favourites(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
     let section_count = app.config.sections.len();
     for si in 0..section_count {
-        section(app, ui, f, si, section_count);
+        let a = stagger(f, 0.1 + 0.6 * si as f32 / section_count.max(1) as f32);
+        ui.scope(|ui| {
+            ui.set_opacity(a);
+            section(app, ui, f, si, section_count);
+        });
         ui.add_space(2.0);
     }
     if section_count == 0 {
@@ -1244,7 +1300,7 @@ fn window_card(
         .ctx()
         .animate_bool_with_time(id.with("pending"), pending, 0.2);
     let mut painter = ui.painter().clone();
-    painter.set_opacity(1.0 - 0.6 * fade);
+    painter.multiply_opacity(1.0 - 0.6 * fade);
 
     let thumb = Rect::from_min_size(outer.min + vec2(0.0, stack_pad), vec2(width, preview_h))
         .translate(vec2(0.0, -2.0 * hover));
@@ -1441,7 +1497,7 @@ struct Arch {
 }
 
 impl Arch {
-    fn new(full: Rect, left: bool, slide: f32) -> Arch {
+    fn new(full: Rect, left: bool, slide: f32, swell: f32) -> Arch {
         let top = full.top() + 6.0;
         let bottom = full.bottom() - 6.0;
         let inner = full.width() - OUTER_MARGIN + 4.0; // straight inner edge, from the screen edge
@@ -1457,7 +1513,7 @@ impl Arch {
         let (y0, y1) = (top + r, bottom - r);
         for i in 1..curve_steps {
             let t = i as f32 / curve_steps as f32;
-            pts.push((inner + ARCH_BULGE * (t * std::f32::consts::PI).sin(), y0 + (y1 - y0) * t));
+            pts.push((inner + ARCH_BULGE * swell * (t * std::f32::consts::PI).sin(), y0 + (y1 - y0) * t));
         }
         for i in 0..=steps {
             let a = i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;

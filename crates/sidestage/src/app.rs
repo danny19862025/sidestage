@@ -341,7 +341,7 @@ impl SidestageApp {
     }
 
     /// Whether the sidebar should currently be fully shown.
-    fn wants_shown(&self) -> bool {
+    pub fn wants_shown(&self) -> bool {
         !self.config.settings.auto_hide || self.autohide.shown
     }
 
@@ -408,10 +408,11 @@ impl SidestageApp {
 
     /// Reveal progress 0..1, animated.
     pub fn reveal(&self, ctx: &egui::Context) -> f32 {
-        let anim = if self.config.settings.animations {
-            0.18
-        } else {
-            0.0
+        // Opening is a little slower so the spring of the arch reads.
+        let anim = match (self.config.settings.animations, self.wants_shown()) {
+            (false, _) => 0.0,
+            (true, true) => 0.42,
+            (true, false) => 0.22,
         };
         ctx.animate_bool_with_time(egui::Id::unique("reveal"), self.wants_shown(), anim)
     }
