@@ -886,9 +886,15 @@ fn tiles(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize) {
 
     let label_h = if s.show_labels { 18.0 } else { 0.0 };
     let min_tile = s.icon_size + if s.show_labels { 26.0 } else { 14.0 };
-    let cols = (((avail + gap) / (min_tile + gap)).floor() as usize).max(1);
+    let cols = if s.columns > 0 {
+        s.columns as usize
+    } else {
+        (((avail + gap) / (min_tile + gap)).floor() as usize).max(1)
+    };
     let tile_w = (avail - gap * (cols as f32 - 1.0)) / cols as f32;
-    let tile_h = s.icon_size + 14.0 + label_h;
+    // Fixed column counts shrink icons to fit narrow tiles.
+    let icon = s.icon_size.min(tile_w - 10.0).max(18.0);
+    let tile_h = icon + 14.0 + label_h;
     let rows = items.len().div_ceil(cols);
     let (grid, _) =
         ui.allocate_exact_size(vec2(avail, rows as f32 * (tile_h + gap)), Sense::hover());
@@ -931,9 +937,9 @@ fn tiles(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize) {
         let icon_rect = Rect::from_center_size(
             pos2(
                 rect.center().x,
-                rect.top() + 7.0 + s.icon_size / 2.0 - bounce - hover * 1.5,
+                rect.top() + 7.0 + icon / 2.0 - bounce - hover * 1.5,
             ),
-            vec2(s.icon_size, s.icon_size),
+            vec2(icon, icon),
         );
         let tint = if dragging_me {
             Color32::from_white_alpha(90)
@@ -968,7 +974,7 @@ fn tiles(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize) {
             if let Some(ptr) = ui.ctx().pointer_interact_pos() {
                 let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("fav-drag"));
                 let fp = ui.ctx().layer_painter(layer);
-                let r = Rect::from_center_size(ptr, vec2(s.icon_size + 12.0, s.icon_size + 12.0));
+                let r = Rect::from_center_size(ptr, vec2(icon + 12.0, icon + 12.0));
                 fp.add(p.card_shadow().as_shape(r, CornerRadius::same(12)));
                 fp.rect_filled(r, 12.0, p.raised);
                 draw_icon(

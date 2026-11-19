@@ -17,6 +17,7 @@ pub enum Tab {
     Favourites,
     Appearance,
     Behaviour,
+    Integration,
     About,
 }
 
@@ -39,6 +40,8 @@ pub struct SettingsUi {
     /// URL being edited for a website favourite (id, text).
     url_edit: Option<(String, String)>,
     shortcut_edit: Option<String>,
+    /// When the Settings window last opened (drives the logo intro).
+    opened_at: Option<std::time::Instant>,
 }
 
 pub fn viewport_id() -> ViewportId {
@@ -59,7 +62,11 @@ pub fn show(app: &mut SidestageApp, ctx: &egui::Context) {
             height: icon.height,
         });
     ctx.show_viewport_immediate(viewport_id(), builder, |ui, _class| {
+        if app.settings.opened_at.is_none() {
+            app.settings.opened_at = Some(std::time::Instant::now());
+        }
         if ui.input(|i| i.viewport().close_requested()) {
+            app.settings.opened_at = None;
             app.settings_open = false;
             app.settings.show_app_picker = false;
             app.settings.editing = None;
@@ -89,9 +96,11 @@ pub fn show(app: &mut SidestageApp, ctx: &egui::Context) {
                         Tab::Favourites => favourites(app, ui),
                         Tab::Appearance => appearance(app, ui),
                         Tab::Behaviour => behaviour(app, ui),
-                        Tab::About => about(app, ui),
+                        Tab::Integration => integration(app, ui),
+                        Tab::About => about_page(app, ui),
                     });
             });
+        intro(app, ui);
     });
 }
 
@@ -111,7 +120,8 @@ fn nav(app: &mut SidestageApp, ui: &mut Ui) {
                 (Tab::Favourites, "Favourites"),
                 (Tab::Appearance, "Appearance"),
                 (Tab::Behaviour, "Behaviour"),
-                (Tab::About, "Integration & about"),
+                (Tab::Integration, "Integration"),
+                (Tab::About, "About"),
             ] {
                 let selected = app.settings.tab == tab;
                 let (rect, resp) =
@@ -221,6 +231,25 @@ fn appearance(app: &mut SidestageApp, ui: &mut Ui) {
         row(ui, "Animations", "", |ui| {
             ui.checkbox(&mut s.animations, "");
         });
+        row(
+            ui,
+            "Panel opacity",
+            "Lower is more see-through (KDE blurs what's behind).",
+            |ui| {
+                let mut pct = (s.opacity * 100.0).round();
+                if ui
+                    .add(
+                        egui::Slider::new(&mut pct, 20.0..=100.0)
+                            .suffix(" %")
+                            .step_by(1.0)
+                            .fixed_decimals(0),
+                    )
+                    .changed()
+                {
+                    s.opacity = pct / 100.0;
+                }
+            },
+        );
     });
     group(ui, app, |ui| {
         row(ui, "Sidebar width", "", |ui| {
@@ -242,6 +271,24 @@ fn appearance(app: &mut SidestageApp, ui: &mut Ui) {
         row(ui, "Show app names", "", |ui| {
             ui.checkbox(&mut s.show_labels, "");
         });
+        row(
+            ui,
+            "Favourite columns",
+            "Auto fits as many as the width allows; icons shrink to fit.",
+            |ui| {
+                let options: Vec<(u8, String)> = std::iter::once((0u8, "Auto".to_string()))
+                    .chain((2..=Settings::MAX_COLUMNS).map(|n| (n, n.to_string())))
+                    .collect();
+                for (v, label) in options.iter().rev() {
+                    if ui
+                        .selectable_label(s.columns == *v, label.as_str())
+                        .clicked()
+                    {
+                        s.columns = *v;
+                    }
+                }
+            },
+        );
         row(
             ui,
             "Window preview height",
@@ -378,8 +425,8 @@ fn behaviour(app: &mut SidestageApp, ui: &mut Ui) {
     }
 }
 
-fn about(app: &mut SidestageApp, ui: &mut Ui) {
-    heading(ui, "Integration & about", "");
+fn integration(app: &mut SidestageApp, ui: &mut Ui) {
+    heading(ui, "Integration", "How Sidestage connects to this desktop.");
     let p = app.palette;
     let status = app.status.clone();
     let backend = app.backend.name();
@@ -1137,4 +1184,165 @@ fn shortcut_group(app: &mut SidestageApp, ui: &mut Ui) {
         app.apply_hotkey();
         app.mark_dirty();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Logo intro and About
+
+fn spring(t: f32) -> f32 {
+    if t >= 1.0 {
+        return 1.0;
+    }
+    1.0 - (-7.0 * t).exp() * (12.0 * t).cos()
+}
+
+fn smooth(a: f32, b: f32, t: f32) -> f32 {
+    let x = ((t - a) / (b - a)).clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
+/// Each time Settings opens: the logo springs in, a ring pulses out, the
+/// name fades in, then the overlay dissolves to reveal the page.
+fn intro(app: &mut SidestageApp, ui: &mut Ui) {
+    const DURATION: f32 = 1.35;
+    let Some(start) = app.settings.opened_at else {
+        return;
+    };
+    let t = start.elapsed().as_secs_f32();
+    if !app.config.settings.animations || t >= DURATION {
+        return;
+    }
+    ui.ctx().request_repaint();
+    let p = app.palette;
+    let rect = ui.ctx().content_rect();
+    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("settings-intro"));
+    let painter = ui.ctx().layer_painter(layer);
+    let fade = 1.0 - smooth(0.95, DURATION, t);
+    let bg = ui.visuals().window_fill;
+    painter.rect_filled(rect, 0.0, bg.gamma_multiply(fade));
+    // Swallow clicks while the overlay is opaque.
+    if fade > 0.5 {
+        ui.ctx().move_to_top(layer);
+    }
+    let c = rect.center() - vec2(0.0, 24.0);
+    let pop = spring(smooth(0.0, 0.55, t));
+    let size = 112.0 * pop;
+    // Pulse ring.
+    let ring_t = smooth(0.18, 0.95, t);
+    if ring_t > 0.0 && ring_t < 1.0 {
+        let r = 62.0 + 28.0 * ring_t;
+        painter.circle_stroke(
+            c,
+            r,
+            egui::Stroke::new(
+                3.0 * (1.0 - ring_t),
+                p.accent.gamma_multiply((1.0 - ring_t) * fade),
+            ),
+        );
+    }
+    // Soft glow behind the logo.
+    for k in 0..6 {
+        let g = 1.0 - k as f32 / 6.0;
+        painter.circle_filled(
+            c,
+            size * (0.55 + 0.12 * k as f32),
+            p.accent.gamma_multiply(0.05 * g * pop.min(1.0) * fade),
+        );
+    }
+    if let Some(tex) = app
+        .textures
+        .app_icon("__brand_big")
+        .or(app.textures.app_icon("__brand"))
+    {
+        // A small tilt that settles with the spring.
+        let tilt = (1.0 - pop) * 0.35;
+        let r = egui::Rect::from_center_size(c, vec2(size, size));
+        let mut mesh = egui::Mesh::with_texture(tex.id());
+        mesh.add_rect_with_uv(
+            r,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE.gamma_multiply(fade),
+        );
+        mesh.rotate(egui::emath::Rot2::from_angle(tilt), c);
+        painter.add(egui::Shape::mesh(mesh));
+    }
+    let text_a = smooth(0.35, 0.7, t) * fade;
+    painter.text(
+        c + vec2(0.0, 112.0 + 10.0 * (1.0 - smooth(0.35, 0.7, t))),
+        egui::Align2::CENTER_CENTER,
+        "Sidestage",
+        egui::FontId::proportional(26.0),
+        p.text.gamma_multiply(text_a),
+    );
+    painter.text(
+        c + vec2(0.0, 142.0),
+        egui::Align2::CENTER_CENTER,
+        "Settings",
+        egui::FontId::proportional(14.0),
+        p.text_dim.gamma_multiply(smooth(0.5, 0.8, t) * fade),
+    );
+}
+
+fn about_page(app: &mut SidestageApp, ui: &mut Ui) {
+    let p = app.palette;
+    ui.add_space(12.0);
+    ui.vertical_centered(|ui| {
+        // Gentle float for the logo.
+        let t = ui.input(|i| i.time) as f32;
+        let bob = if app.config.settings.animations { (t * 1.6).sin() * 3.0 } else { 0.0 };
+        if app.config.settings.animations {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+        }
+        let (rect, _) = ui.allocate_exact_size(vec2(120.0, 120.0), egui::Sense::hover());
+        for k in 0..5 {
+            let g = 1.0 - k as f32 / 5.0;
+            ui.painter().circle_filled(rect.center(), 46.0 + 9.0 * k as f32, p.accent.gamma_multiply(0.045 * g));
+        }
+        if let Some(tex) = app.textures.app_icon("__brand_big").or(app.textures.app_icon("__brand")) {
+            let r = egui::Rect::from_center_size(rect.center() + vec2(0.0, bob), vec2(96.0, 96.0));
+            ui.painter().image(tex.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+        }
+        ui.add_space(6.0);
+        ui.label(RichText::new("Sidestage").size(26.0).strong());
+        ui.label(RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(p.text_dim));
+        ui.add_space(8.0);
+        ui.label(RichText::new("Favourite apps, folders and websites, and your minimized windows, in one sidebar at the edge of the screen.").color(p.text_dim));
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
+            let w = 3.0 * 150.0;
+            ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
+            let open = |app: &mut SidestageApp, url: &str| {
+                if let Err(e) = sidestage_platform::launch::launch(&sidestage_core::LaunchTarget::Url { url: url.into() }) {
+                    app.toast(format!("Couldn't open the browser: {e}"), true);
+                }
+            };
+            if ui.add_sized([140.0, 30.0], egui::Button::new("GitHub")).clicked() {
+                open(app, "https://github.com/danny19862025/sidestage");
+            }
+            if ui.add_sized([140.0, 30.0], egui::Button::new("Report an issue")).clicked() {
+                open(app, "https://github.com/danny19862025/sidestage/issues");
+            }
+            if ui.add_sized([140.0, 30.0], egui::Button::new("Integration details")).clicked() {
+                app.settings.tab = Tab::Integration;
+            }
+        });
+    });
+    ui.add_space(18.0);
+    group(ui, app, |ui| {
+        egui::Grid::new("about-grid")
+            .num_columns(2)
+            .spacing([18.0, 8.0])
+            .show(ui, |ui| {
+                for (k, v) in [
+                    ("Licence", "MIT"),
+                    ("Built with", "Rust · egui · per-desktop integrations"),
+                    ("Desktops", "Windows 11 · KDE Plasma · GNOME · X11"),
+                    ("Settings file", &app.config_path().display().to_string()),
+                ] {
+                    ui.label(RichText::new(k).weak());
+                    ui.add(egui::Label::new(v).truncate()).on_hover_text(v);
+                    ui.end_row();
+                }
+            });
+    });
 }

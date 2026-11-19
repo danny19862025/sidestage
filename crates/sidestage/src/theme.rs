@@ -61,6 +61,17 @@ impl Palette {
         }
     }
 
+    /// Applies the user's panel opacity (`0.2..=1.0`) to the panel and cards.
+    pub fn with_opacity(mut self, opacity: f32) -> Self {
+        let a = |o: f32| (o.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let [r, g, b, _] = self.surface.to_srgba_unmultiplied();
+        self.surface = Color32::from_rgba_unmultiplied(r, g, b, a(opacity));
+        let [r, g, b, _] = self.raised.to_srgba_unmultiplied();
+        // Cards stay a touch more solid than the panel so previews read.
+        self.raised = Color32::from_rgba_unmultiplied(r, g, b, a((opacity + 0.12).min(1.0)));
+        self
+    }
+
     pub fn card_shadow(&self) -> Shadow {
         Shadow {
             offset: [0, 3],

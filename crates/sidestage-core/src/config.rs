@@ -253,6 +253,10 @@ pub struct Settings {
     /// Hide the sidebar (and its edge reveal and reserved space) while a
     /// fullscreen app covers its monitor.
     pub pause_in_fullscreen: bool,
+    /// Favourite grid columns; 0 = as many as fit.
+    pub columns: u8,
+    /// Opacity of the sidebar panel (0.2 = glassy … 1.0 = solid).
+    pub opacity: f32,
 }
 
 impl Default for Settings {
@@ -272,6 +276,8 @@ impl Default for Settings {
             reveal_delay_ms: 150,
             search_shortcut: "Ctrl+Alt+Space".into(),
             pause_in_fullscreen: true,
+            columns: 0,
+            opacity: 0.72,
         }
     }
 }
@@ -280,6 +286,8 @@ impl Settings {
     pub const WIDTH_RANGE: std::ops::RangeInclusive<f32> = 180.0..=420.0;
     pub const PREVIEW_RANGE: std::ops::RangeInclusive<f32> = 72.0..=240.0;
     pub const ICON_RANGE: std::ops::RangeInclusive<f32> = 28.0..=64.0;
+    pub const OPACITY_RANGE: std::ops::RangeInclusive<f32> = 0.2..=1.0;
+    pub const MAX_COLUMNS: u8 = 6;
 
     /// Clamp values that may come from a hand-edited file.
     pub fn sanitize(&mut self) {
@@ -299,6 +307,8 @@ impl Settings {
         );
         clamp(&mut self.icon_size, &Self::ICON_RANGE, d.icon_size);
         self.reveal_delay_ms = self.reveal_delay_ms.min(2000);
+        self.columns = self.columns.min(Self::MAX_COLUMNS);
+        clamp(&mut self.opacity, &Self::OPACITY_RANGE, d.opacity);
     }
 }
 

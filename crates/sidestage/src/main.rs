@@ -112,6 +112,8 @@ fn main() -> eframe::Result<()> {
             app.apply_hotkey();
             app.textures
                 .set_app_icon(&cc.egui_ctx, "__brand", &brand::app_icon(64));
+            app.textures
+                .set_app_icon(&cc.egui_ctx, "__brand_big", &brand::app_icon(256));
             Ok(Box::new(AppWithGuard { app, _guard: guard }))
         }),
     )

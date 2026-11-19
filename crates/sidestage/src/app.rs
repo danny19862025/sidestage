@@ -71,6 +71,7 @@ pub struct SidestageApp {
     pub palette: Palette,
     system_dark: Arc<AtomicU8>,
     applied_dark: Option<bool>,
+    applied_opacity: f32,
 
     pub panel: Option<Panel>,
     panel_failed: bool,
@@ -197,6 +198,7 @@ impl SidestageApp {
             palette,
             system_dark,
             applied_dark: None,
+            applied_opacity: -1.0,
             panel: None,
             panel_failed: false,
             monitors: sidestage_platform::panel::monitors(),
@@ -815,9 +817,11 @@ impl SidestageApp {
 impl eframe::App for SidestageApp {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let dark = self.dark();
-        if self.applied_dark != Some(dark) {
+        let opacity = self.config.settings.opacity;
+        if self.applied_dark != Some(dark) || self.applied_opacity != opacity {
             self.applied_dark = Some(dark);
-            self.palette = Palette::new(dark);
+            self.applied_opacity = opacity;
+            self.palette = Palette::new(dark).with_opacity(opacity);
             theme::apply(ctx, &self.palette);
         }
         if ctx.input(|i| i.viewport().close_requested()) && !self.quitting {
