@@ -168,7 +168,7 @@ impl Panel {
             screen.height_in_pixels as i32,
         );
         let atoms = Atoms::new(&conn)?.reply()?;
-        let p = Panel {
+        let mut p = Panel {
             conn,
             root,
             root_size,
@@ -185,6 +185,13 @@ impl Panel {
             sticky: None,
         };
         p.init()?;
+        if super::is_desktop("KDE") {
+            // Set up right away; the periodic check only re-tries failures.
+            match super::kwin_script::sticky_sidebar() {
+                Ok(s) => p.sticky = Some(s),
+                Err(e) => log::warn!("cannot keep the sidebar on all desktops: {e:#}"),
+            }
+        }
         Ok(p)
     }
 
