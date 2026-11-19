@@ -21,6 +21,8 @@ pub struct DesktopEntry {
     pub no_display: bool,
     pub hidden: bool,
     pub kind: String,
+    /// `URL` of a `Type=Link` entry.
+    pub url: Option<String>,
     pub startup_wm_class: Option<String>,
     pub only_show_in: Vec<String>,
     pub not_show_in: Vec<String>,
@@ -92,6 +94,10 @@ impl DesktopEntry {
             no_display: flag("NoDisplay"),
             hidden: flag("Hidden"),
             kind: raw.get("Type").cloned().unwrap_or_default(),
+            url: raw
+                .get("URL")
+                .map(|v| unescape(v))
+                .filter(|v| !v.is_empty()),
             startup_wm_class: raw.get("StartupWMClass").cloned(),
             only_show_in: list("OnlyShowIn"),
             not_show_in: list("NotShowIn"),

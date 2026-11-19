@@ -95,6 +95,28 @@ pub fn from_path(path: &Path) -> Option<AppEntry> {
     if !path.exists() {
         return None;
     }
+    if path.is_dir() {
+        return Some(crate::apps::folder_entry(path));
+    }
+    // Internet Shortcut files (what browsers create when a link is dragged
+    // to the desktop) become website favourites.
+    if path
+        .extension()
+        .map(|e| e.eq_ignore_ascii_case("url"))
+        .unwrap_or(false)
+    {
+        if let Some(url) = std::fs::read_to_string(path)
+            .ok()
+            .as_deref()
+            .and_then(crate::apps::internet_shortcut_url)
+        {
+            let stem = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            return crate::apps::website_entry(&stem, &url).ok();
+        }
+    }
     let name = path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())

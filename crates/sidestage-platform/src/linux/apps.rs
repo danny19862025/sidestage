@@ -115,14 +115,23 @@ pub fn from_path(path: &Path) -> Option<AppEntry> {
     if ext == "desktop" {
         let e = DesktopEntry::load(path, locale().as_deref())?;
         if e.kind == "Link" {
-            // URL shortcut: open it with xdg-open.
-            return Some(AppEntry {
-                name: e.name.clone(),
-                subtitle: None,
-                target: LaunchTarget::Path {
+            // A web link saved by a browser or file manager becomes a website
+            // favourite; other link types open through xdg-open.
+            let web = e
+                .url
+                .as_deref()
+                .and_then(|u| sidestage_core::config::normalize_web_url(u).ok());
+            let target = match web {
+                Some(url) => LaunchTarget::Url { url },
+                None => LaunchTarget::Path {
                     path: path.to_path_buf(),
                     args: vec![],
                 },
+            };
+            return Some(AppEntry {
+                name: e.name.clone(),
+                subtitle: e.url.clone(),
+                target,
                 icon: e
                     .icon
                     .map(|name| IconSource::Themed { name })
@@ -131,6 +140,9 @@ pub fn from_path(path: &Path) -> Option<AppEntry> {
             });
         }
         return Some(to_app(&e));
+    }
+    if path.is_dir() {
+        return Some(crate::apps::folder_entry(path));
     }
     let name = path
         .file_stem()

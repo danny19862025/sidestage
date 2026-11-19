@@ -370,7 +370,10 @@ impl Panel {
                     Some(strip) => (g.x + g.width - strip, strip),
                     None => (g.x, g.width),
                 };
-                sensor.set_rect(g.auto_hide.then(|| [l(x), l(g.y), l(w).max(1), l(g.height)]));
+                sensor.set_rect(
+                    g.auto_hide
+                        .then(|| [l(x), l(g.y), l(w).max(1), l(g.height)]),
+                );
             }
         }
         self.conn.configure_window(
@@ -481,15 +484,31 @@ impl Panel {
         let atom = self.atoms._KDE_NET_WM_BLUR_BEHIND_REGION;
         let r = match &rects {
             Some(v) if !v.is_empty() => {
-                let data: Vec<u32> = v.iter().flat_map(|r| r.iter().map(|x| (*x).max(0) as u32)).collect();
-                self.conn.change_property32(PropMode::REPLACE, self.window, atom, AtomEnum::CARDINAL, &data).map(|_| ())
+                let data: Vec<u32> = v
+                    .iter()
+                    .flat_map(|r| r.iter().map(|x| (*x).max(0) as u32))
+                    .collect();
+                self.conn
+                    .change_property32(
+                        PropMode::REPLACE,
+                        self.window,
+                        atom,
+                        AtomEnum::CARDINAL,
+                        &data,
+                    )
+                    .map(|_| ())
             }
             _ => self.conn.delete_property(self.window, atom).map(|_| ()),
         };
         let _ = r;
         // The same region is the input shape while revealed, so clicks
         // outside the curved outline reach the windows underneath.
-        if self.last.as_ref().map(|g| g.collapsed_strip.is_none()).unwrap_or(true) {
+        if self
+            .last
+            .as_ref()
+            .map(|g| g.collapsed_strip.is_none())
+            .unwrap_or(true)
+        {
             let shaped = match &rects {
                 Some(v) if !v.is_empty() => {
                     let list: Vec<x11rb::protocol::xproto::Rectangle> = v
@@ -511,7 +530,14 @@ impl Panel {
                         &list,
                     )
                 }
-                _ => self.conn.shape_mask(shape::SO::SET, shape::SK::INPUT, self.window, 0, 0, x11rb::NONE),
+                _ => self.conn.shape_mask(
+                    shape::SO::SET,
+                    shape::SK::INPUT,
+                    self.window,
+                    0,
+                    0,
+                    x11rb::NONE,
+                ),
             };
             let _ = shaped;
         }

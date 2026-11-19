@@ -201,6 +201,10 @@ pub fn launch(target: &LaunchTarget) -> Result<()> {
             )
         }
         LaunchTarget::Command { program, args } => shell_open(program, &quote_args(args), None),
+        LaunchTarget::Url { url } => {
+            let url = sidestage_core::config::normalize_web_url(url).map_err(|e| anyhow!(e))?;
+            shell_open(&url, "", None)
+        }
         LaunchTarget::DesktopEntry { .. } => {
             bail!("Linux .desktop shortcuts cannot be launched on Windows")
         }
@@ -235,6 +239,10 @@ pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Op
                 icons::find_on_path(program).and_then(|p| icons::shell_icon(&p, size))
             }
             LaunchTarget::DesktopEntry { .. } => None,
+            // The default browser's icon stands in for a site icon.
+            LaunchTarget::Url { .. } => {
+                icons::default_browser().and_then(|exe| icons::shell_icon(&exe, size))
+            }
         },
     }
 }

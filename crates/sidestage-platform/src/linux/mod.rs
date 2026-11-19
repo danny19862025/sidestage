@@ -352,6 +352,10 @@ pub fn launch(target: &LaunchTarget) -> Result<()> {
             spawn_detached(&argv, None)
         }
         LaunchTarget::AppsFolder { .. } => bail!("Windows Store apps cannot be launched on Linux"),
+        LaunchTarget::Url { url } => {
+            let url = sidestage_core::config::normalize_web_url(url).map_err(|e| anyhow!(e))?;
+            spawn_detached(&["xdg-open".into(), url], None)
+        }
     }
 }
 
@@ -370,6 +374,10 @@ pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Op
             };
             let found = match target {
                 LaunchTarget::DesktopEntry { path } => from_entry(path),
+                LaunchTarget::Path { path, .. } if path.is_dir() => {
+                    icons::load_named("folder", size)
+                        .or_else(|| icons::load_named("inode-directory", size))
+                }
                 LaunchTarget::Path { path, .. } => {
                     if path.extension().map(|e| e == "desktop").unwrap_or(false) {
                         from_entry(path)
@@ -401,6 +409,13 @@ pub fn favourite_icon(icon: &IconSource, target: &LaunchTarget, size: u32) -> Op
                         .or_else(|| icons::load_named(&base, size))
                 }
                 LaunchTarget::AppsFolder { .. } => None,
+                LaunchTarget::Url { .. } => [
+                    "web-browser",
+                    "applications-internet",
+                    "internet-web-browser",
+                ]
+                .iter()
+                .find_map(|n| icons::load_named(n, size)),
             };
             found.or_else(|| icons::load_named("application-x-executable", size))
         }

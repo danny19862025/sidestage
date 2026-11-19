@@ -46,6 +46,8 @@ pub enum LaunchTarget {
         #[serde(default)]
         args: Vec<String>,
     },
+    /// An http(s) address opened in the default browser.
+    Url { url: String },
 }
 
 impl LaunchTarget {
@@ -60,8 +62,58 @@ impl LaunchTarget {
                 format!("apps:{}", parsing_name.to_lowercase())
             }
             LaunchTarget::Command { program, args } => format!("cmd:{program}|{}", args.join(" ")),
+            LaunchTarget::Url { url } => format!("url:{}", url.to_lowercase()),
         }
     }
+
+    /// True for targets that open a website.
+    pub fn is_url(&self) -> bool {
+        matches!(self, LaunchTarget::Url { .. })
+    }
+}
+
+/// Validates and normalises a website address typed or pasted by the user.
+/// Adds `https://` when no scheme is given; only http and https are allowed.
+pub fn normalize_web_url(input: &str) -> Result<String, String> {
+    let s = input.trim();
+    if s.is_empty() {
+        return Err("Enter a web address".into());
+    }
+    if s.chars().any(char::is_whitespace) {
+        return Err("A web address can't contain spaces".into());
+    }
+    let lower = s.to_ascii_lowercase();
+    let with_scheme = if lower.starts_with("http://") || lower.starts_with("https://") {
+        s.to_string()
+    } else if lower.contains("://")
+        || lower.starts_with("javascript:")
+        || lower.starts_with("file:")
+        || lower.starts_with("data:")
+    {
+        return Err("Only http:// and https:// addresses are supported".into());
+    } else {
+        format!("https://{s}")
+    };
+    let rest = with_scheme
+        .split_once("://")
+        .map(|(_, r)| r)
+        .unwrap_or_default();
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.rsplit('@').next().unwrap_or_default();
+    let hostname = host.split(':').next().unwrap_or_default();
+    if hostname.is_empty()
+        || !(hostname.contains('.') || hostname == "localhost" || hostname.starts_with('['))
+    {
+        return Err("That doesn't look like a web address".into());
+    }
+    Ok(with_scheme)
+}
+
+/// A readable default name for a website: its host without `www.`.
+pub fn url_display_name(url: &str) -> String {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let host = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    host.trim_start_matches("www.").to_string()
 }
 
 /// Where a favourite's icon comes from.
@@ -84,6 +136,9 @@ pub struct Favourite {
     pub target: LaunchTarget,
     #[serde(default)]
     pub icon: IconSource,
+    /// Started by "Launch section". Clicking always opens it.
+    #[serde(default = "yes")]
+    pub include_in_launch: bool,
 }
 
 impl Favourite {
@@ -93,6 +148,7 @@ impl Favourite {
             name: name.into(),
             target,
             icon,
+            include_in_launch: true,
         }
     }
 }
@@ -318,6 +374,20 @@ impl Config {
 
     pub fn section_index(&self, section_id: &str) -> Option<usize> {
         self.sections.iter().position(|s| s.id == section_id)
+    }
+
+    /// Favourites "Launch section" starts, in display order.
+    pub fn section_launch_list(&self, section_id: &str) -> Vec<Favourite> {
+        self.section_index(section_id)
+            .map(|i| {
+                self.sections[i]
+                    .items
+                    .iter()
+                    .filter(|f| f.include_in_launch)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn contains_target(&self, section_id: &str, target: &LaunchTarget) -> bool {

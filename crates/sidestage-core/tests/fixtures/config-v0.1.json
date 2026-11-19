@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "settings": {
+    "edge": "left",
+    "monitor": {
+      "kind": "named",
+      "name": "eDP-1",
+      "index": 0
+    },
+    "width": 250.0,
+    "preview_height": 130.0,
+    "icon_size": 44.0,
+    "auto_hide": true,
+    "reserve_space": true,
+    "theme": "system",
+    "launch_at_login": true,
+    "show_labels": true,
+    "animations": true,
+    "reveal_delay_ms": 375
+  },
+  "sections": [
+    {
+      "id": "sec-18a2b7c9d0e1f20",
+      "name": "Games",
+      "expanded": true,
+      "items": [
+        {
+          "id": "fav-18a2b7c9d0e1f21",
+          "name": "Steam",
+          "target": { "kind": "desktop_entry", "path": "/usr/share/applications/steam.desktop" },
+          "icon": { "kind": "auto" }
+        },
+        {
+          "id": "fav-18a2b7c9d0e1f22",
+          "name": "My Game",
+          "target": { "kind": "path", "path": "/opt/games/game.AppImage", "args": ["--fullscreen"] },
+          "icon": { "kind": "file", "path": "/opt/games/icon.png" }
+        }
+      ]
+    },
+    {
+      "id": "sec-18a2b7c9d0e1f23",
+      "name": "Work",
+      "expanded": false,
+      "items": [
+        {
+          "id": "fav-18a2b7c9d0e1f24",
+          "name": "Terminal",
+          "target": { "kind": "command", "program": "konsole", "args": [] },
+          "icon": { "kind": "themed", "name": "utilities-terminal" }
+        },
+        {
+          "id": "fav-18a2b7c9d0e1f25",
+          "name": "Notepad",
+          "target": { "kind": "apps_folder", "parsing_name": "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App" }
+        }
+      ]
+    }
+  ]
+}

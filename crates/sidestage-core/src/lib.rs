@@ -4,6 +4,7 @@
 //! [`tracker::WindowTracker`] with [`tracker::WindowInfo`] values and the UI
 //! reads favourites and settings through [`config::Config`].
 
+pub mod batch;
 pub mod config;
 pub mod desktop_entry;
 pub mod image;

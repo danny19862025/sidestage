@@ -129,3 +129,25 @@ pub fn find_on_path(program: &str) -> Option<String> {
     }
     None
 }
+
+/// Executable registered for http:// links (the default browser).
+pub fn default_browser() -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::UI::Shell::{AssocQueryStringW, ASSOCF_NONE, ASSOCSTR_EXECUTABLE};
+    let mut buf = vec![0u16; 1024];
+    let mut len = buf.len() as u32;
+    unsafe {
+        AssocQueryStringW(
+            ASSOCF_NONE,
+            ASSOCSTR_EXECUTABLE,
+            &HSTRING::from("http"),
+            &HSTRING::from("open"),
+            Some(PWSTR(buf.as_mut_ptr())),
+            &mut len,
+        )
+        .ok()
+        .ok()?;
+    }
+    let s = String::from_utf16_lossy(&buf[..(len as usize).saturating_sub(1)]);
+    (!s.is_empty()).then_some(s)
+}

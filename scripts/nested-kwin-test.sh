@@ -20,6 +20,7 @@ OUT="$OUT"; ROOT="$ROOT"
 export SIDESTAGE_CONFIG="$OUT/config.json"
 export RUST_LOG=\${RUST_LOG:-info,usvg=error}
 export XDG_CURRENT_DESKTOP=KDE XDG_SESSION_TYPE=wayland
+export PATH="$ROOT/scripts/testbin:\$PATH" SIDESTAGE_XDG_OPEN_LOG="$OUT/xdg-open.log"
 shot() { python3 "$ROOT/scripts/screenshot.py" "$OUT/shot-\$1.png" >/dev/null; }
 XINPUT="$XINPUT"
 click() { "$XINPUT" click "\$@"; sleep 0.8; }
@@ -28,9 +29,11 @@ glide() { "$XINPUT" glide "\$@"; sleep 0.3; }
 "$BIN" > "$OUT/sidestage.log" 2>&1 &
 APP=\$!
 sleep 3
+if [ -z "\${NO_TEST_WINDOWS:-}" ]; then
 python3 "$ROOT/scripts/test-window.py" "Quarterly report.odt" 1.5 90 >/dev/null 2>&1 &
 python3 "$ROOT/scripts/test-window.py" "Design notes" 2.0 90 >/dev/null 2>&1 &
 python3 "$ROOT/scripts/test-window.py" "Maximized window" 0 90 max >/dev/null 2>&1 &
+fi
 sleep 5
 shot 1
 ${SCENARIO:+source "$SCENARIO"}
@@ -39,6 +42,6 @@ echo "exit=\$?" >> "$OUT/sidestage.log"
 INNER
 chmod +x "$OUT/session.sh"
 export -n WAYLAND_DISPLAY DISPLAY
-QT_FORCE_STDERR_LOGGING=1 QT_LOGGING_RULES="kwin_scripting.debug=true" timeout 150 dbus-run-session -- kwin_wayland --virtual --xwayland --width 1440 --height 900 \
+QT_FORCE_STDERR_LOGGING=1 QT_LOGGING_RULES="kwin_scripting.debug=true" NO_TEST_WINDOWS="${NO_TEST_WINDOWS:-}" timeout 150 dbus-run-session -- kwin_wayland --virtual --xwayland --width 1440 --height 900 \
   --socket sidestage-test-wl --exit-with-session "$OUT/session.sh" > "$OUT/kwin.log" 2>&1 || true
 ls "$OUT"

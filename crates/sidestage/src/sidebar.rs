@@ -38,6 +38,10 @@ enum Action {
     EditFav(String),
     Restore(WindowId),
     ToggleGroup(String),
+    LaunchSection(String),
+    ToggleInclude(String),
+    AddFolder(String),
+    AddWebsite(String),
     OpenSettings(Tab),
     AddApps(Option<String>),
     DropFiles {
@@ -130,7 +134,11 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     // shape, then content fades in top to bottom. Closing: quick ease-in.
     let opening = app.wants_shown();
     let anim = settings.animations;
-    let glide = if opening { ease_out_cubic(reveal) } else { reveal * reveal * reveal };
+    let glide = if opening {
+        ease_out_cubic(reveal)
+    } else {
+        reveal * reveal * reveal
+    };
     let swell = if !anim {
         1.0
     } else if opening {
@@ -299,6 +307,23 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
         }
         Action::OpenSettings(tab) => {
             app.settings.tab = tab;
+            app.settings_open = true;
+            ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
+        }
+        Action::LaunchSection(id) => app.launch_section(ctx, &id),
+        Action::ToggleInclude(id) => {
+            if let Some(f) = app.config.favourite_mut(&id) {
+                f.include_in_launch = !f.include_in_launch;
+                app.mark_dirty();
+            }
+        }
+        Action::AddFolder(section) => app.spawn_pick(ctx, crate::app::PickKind::Folder, &section),
+        Action::AddWebsite(section) => {
+            app.settings.tab = Tab::Favourites;
+            app.settings.selected_section = Some(section);
+            app.settings.show_app_picker = false;
+            app.settings.editing = None;
+            app.settings.show_website_form = true;
             app.settings_open = true;
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
@@ -539,9 +564,38 @@ fn favourites(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
     }
 }
 
-fn section_menu(ui: &mut Ui, f: &mut Frame, id: &str, index: usize, count: usize) {
+fn section_menu(
+    ui: &mut Ui,
+    f: &mut Frame,
+    id: &str,
+    index: usize,
+    count: usize,
+    launch: Result<usize, &str>,
+) {
+    let label = match launch {
+        Ok(n) => format!("Launch section ({n})"),
+        Err(why) => format!("Launch section · {why}"),
+    };
+    if ui
+        .add_enabled(launch.is_ok(), egui::Button::new(label))
+        .on_hover_text("Open every favourite in this section that is included in section launch")
+        .on_disabled_hover_text(
+            "No favourites are included in section launch, or a launch is in progress",
+        )
+        .clicked()
+    {
+        f.actions.push(Action::LaunchSection(id.to_string()));
+        ui.close();
+    }
+    ui.separator();
     if ui.button("Add apps…").clicked() {
         f.actions.push(Action::AddApps(Some(id.to_string())));
+    }
+    if ui.button("Add folder…").clicked() {
+        f.actions.push(Action::AddFolder(id.to_string()));
+    }
+    if ui.button("Add website…").clicked() {
+        f.actions.push(Action::AddWebsite(id.to_string()));
     }
     if ui.button("Rename").clicked() {
         f.actions.push(Action::StartRename(id.to_string()));
@@ -577,6 +631,7 @@ fn section(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize, count:
 
     // Header row
     let (hrect, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
+    let launch = app.section_launch_status(&sid);
     let renaming = app
         .renaming_section
         .as_ref()
@@ -652,8 +707,8 @@ fn section(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize, count:
         }
         egui::Popup::menu(&more_resp)
             .id(more_resp.id.with("menu"))
-            .show(|ui| section_menu(ui, f, &sid, si, count));
-        hresp.context_menu(|ui| section_menu(ui, f, &sid, si, count));
+            .show(|ui| section_menu(ui, f, &sid, si, count, launch));
+        hresp.context_menu(|ui| section_menu(ui, f, &sid, si, count, launch));
         if hresp.clicked() && !more_resp.clicked() {
             f.actions.push(Action::ToggleSection(sid.clone()));
         }
@@ -836,6 +891,7 @@ fn tiles(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize) {
             f.actions.push(Action::Launch(fav.id.clone()));
         }
         let fav_id = fav.id.clone();
+        let include_in_launch = fav.include_in_launch;
         let sections: Vec<(String, String)> = app
             .config
             .sections
@@ -849,6 +905,13 @@ fn tiles(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize) {
             }
             if ui.button("Edit name & icon…").clicked() {
                 f.actions.push(Action::EditFav(fav_id.clone()));
+            }
+            let mut include = include_in_launch;
+            if ui
+                .checkbox(&mut include, "Include in section launch")
+                .clicked()
+            {
+                f.actions.push(Action::ToggleInclude(fav_id.clone()));
             }
             if !sections.is_empty() {
                 ui.menu_button("Move to", |ui| {
@@ -872,7 +935,14 @@ fn tiles(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame, si: usize) {
             }
         });
         if !dragging_me {
-            resp.on_hover_text_at_pointer(&fav.name)
+            let tip = match &fav.target {
+                sidestage_core::LaunchTarget::Url { url } => format!("{}\n{url}", fav.name),
+                sidestage_core::LaunchTarget::Path { path, .. } if path.is_dir() => {
+                    format!("{}\n{}", fav.name, path.display())
+                }
+                _ => fav.name.clone(),
+            };
+            resp.on_hover_text_at_pointer(tip)
                 .on_hover_cursor(CursorIcon::PointingHand);
         }
     }
@@ -1506,14 +1576,18 @@ impl Arch {
         let mut pts: Vec<(f32, f32)> = vec![(0.0, top)];
         let steps = 10;
         for i in 0..=steps {
-            let a = -std::f32::consts::FRAC_PI_2 + i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
+            let a = -std::f32::consts::FRAC_PI_2
+                + i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
             pts.push((inner - r + r * a.cos(), top + r + r * a.sin()));
         }
         let curve_steps = 48;
         let (y0, y1) = (top + r, bottom - r);
         for i in 1..curve_steps {
             let t = i as f32 / curve_steps as f32;
-            pts.push((inner + ARCH_BULGE * swell * (t * std::f32::consts::PI).sin(), y0 + (y1 - y0) * t));
+            pts.push((
+                inner + ARCH_BULGE * swell * (t * std::f32::consts::PI).sin(),
+                y0 + (y1 - y0) * t,
+            ));
         }
         for i in 0..=steps {
             let a = i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
@@ -1521,7 +1595,11 @@ impl Arch {
         }
         pts.push((0.0, bottom));
         let map = |(x, y): (f32, f32)| {
-            let x = if left { full.left() + x } else { full.right() - x };
+            let x = if left {
+                full.left() + x
+            } else {
+                full.right() - x
+            };
             pos2(x + slide, y)
         };
         let points: Vec<Pos2> = pts.into_iter().map(map).collect();
@@ -1535,10 +1613,21 @@ impl Arch {
         let edge: Vec<Pos2> = self.points[1..self.points.len() - 1].to_vec();
         let dir = if self.left { 1.0 } else { -1.0 };
         let shifted: Vec<Pos2> = edge.iter().map(|q| pos2(q.x + dir * 1.5, q.y)).collect();
-        painter.add(egui::Shape::line(shifted, Stroke::new(3.0, p.shadow.gamma_multiply(0.45))));
-        painter.add(egui::epaint::PathShape::convex_polygon(self.points.clone(), p.surface, Stroke::NONE));
+        painter.add(egui::Shape::line(
+            shifted,
+            Stroke::new(3.0, p.shadow.gamma_multiply(0.45)),
+        ));
+        painter.add(egui::epaint::PathShape::convex_polygon(
+            self.points.clone(),
+            p.surface,
+            Stroke::NONE,
+        ));
         // Thin light rim reads as glass on both themes.
-        let rim = if p.dark { Color32::from_white_alpha(34) } else { Color32::from_white_alpha(170) };
+        let rim = if p.dark {
+            Color32::from_white_alpha(34)
+        } else {
+            Color32::from_white_alpha(170)
+        };
         painter.add(egui::Shape::line(edge, Stroke::new(1.2, rim)));
     }
 
@@ -1554,7 +1643,11 @@ impl Arch {
             for w in self.points.windows(2) {
                 let (a, b) = (w[0], w[1]);
                 if (a.y.max(b.y) >= y0) && (a.y.min(b.y) <= y1) {
-                    let x = if self.left { a.x.min(b.x) - full.left() } else { full.right() - a.x.max(b.x) };
+                    let x = if self.left {
+                        a.x.min(b.x) - full.left()
+                    } else {
+                        full.right() - a.x.max(b.x)
+                    };
                     if x > 1.0 {
                         reach = reach.min(x);
                     }
@@ -1564,7 +1657,12 @@ impl Arch {
                 continue;
             }
             let x = if self.left { 0.0 } else { full.width() - reach };
-            out.push([(x * ppp) as i32, ((y0 - full.top()) * ppp) as i32, (reach * ppp).ceil() as i32, (6.0 * ppp).ceil() as i32]);
+            out.push([
+                (x * ppp) as i32,
+                ((y0 - full.top()) * ppp) as i32,
+                (reach * ppp).ceil() as i32,
+                (6.0 * ppp).ceil() as i32,
+            ]);
         }
         out
     }

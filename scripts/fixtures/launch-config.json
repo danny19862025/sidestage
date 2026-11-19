@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "settings": { "edge": "left", "width": 236, "preview_height": 118, "icon_size": 40, "theme": "dark", "reserve_space": true },
+  "sections": [
+    { "id": "sec-project", "name": "Project", "expanded": true, "items": [
+      { "id": "fav-a", "name": "Editor A", "target": { "kind": "command", "program": "python3", "args": ["/home/danny/Projects/sidestage/scripts/test-window.py", "Launched A", "0", "40"] } },
+      { "id": "fav-broken", "name": "Broken", "target": { "kind": "command", "program": "/nonexistent/broken-app", "args": [] } },
+      { "id": "fav-b", "name": "Editor B", "target": { "kind": "command", "program": "python3", "args": ["/home/danny/Projects/sidestage/scripts/test-window.py", "Launched B", "0", "40"] } },
+      { "id": "fav-excluded", "name": "Excluded", "include_in_launch": false, "target": { "kind": "command", "program": "python3", "args": ["/home/danny/Projects/sidestage/scripts/test-window.py", "Excluded window", "0", "40"] } },
+      { "id": "fav-site", "name": "Docs", "target": { "kind": "url", "url": "https://docs.rs/" } },
+      { "id": "fav-folder", "name": "Scripts", "target": { "kind": "path", "path": "/home/danny/Projects/sidestage/scripts", "args": [] } }
+    ]},
+    { "id": "sec-empty", "name": "Empty", "expanded": true, "items": [] }
+  ]
+}

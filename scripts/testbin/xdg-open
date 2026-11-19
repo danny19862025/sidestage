@@ -1,0 +1,4 @@
+#!/bin/sh
+# Test stub: records what would be opened instead of opening a real browser
+# or file manager. Put scripts/testbin first in PATH inside nested sessions.
+echo "$@" >> "${SIDESTAGE_XDG_OPEN_LOG:-/tmp/sidestage-xdg-open.log}"

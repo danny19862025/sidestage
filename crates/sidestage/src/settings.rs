@@ -32,6 +32,12 @@ pub struct SettingsUi {
     app_query: String,
     themed_name: String,
     delete_move_to: Option<String>,
+    pub show_website_form: bool,
+    website_name: String,
+    website_url: String,
+    website_error: Option<String>,
+    /// URL being edited for a website favourite (id, text).
+    url_edit: Option<(String, String)>,
 }
 
 pub fn viewport_id() -> ViewportId {
@@ -607,29 +613,47 @@ fn section_items(app: &mut SidestageApp, ui: &mut Ui, selected: &str) {
         return;
     };
     let p = app.palette;
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(&app.config.sections[si].name)
-                .size(16.0)
-                .strong(),
-        );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui
-                .button("Add file or program…")
-                .on_hover_text("Choose a shortcut, executable, .desktop file or document")
-                .clicked()
-            {
-                add_from_file(app, selected);
-            }
-            if ui.button("+ Add apps").clicked() {
-                app.settings.show_app_picker = true;
-            }
-        });
+    ui.label(
+        RichText::new(&app.config.sections[si].name)
+            .size(16.0)
+            .strong(),
+    );
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("+ Add apps").clicked() {
+            app.settings.show_app_picker = true;
+        }
+        if ui
+            .button("Add folder…")
+            .on_hover_text("Opens in your file manager")
+            .clicked()
+        {
+            app.spawn_pick(ui.ctx(), crate::app::PickKind::Folder, selected);
+        }
+        if ui
+            .button("Add website…")
+            .on_hover_text("Opens in your default browser")
+            .clicked()
+        {
+            app.settings.show_website_form = true;
+            app.settings.website_error = None;
+        }
+        if ui
+            .button("Add file or program…")
+            .on_hover_text("Choose a shortcut, executable, .desktop or .url file, or a document")
+            .clicked()
+        {
+            app.spawn_pick(ui.ctx(), crate::app::PickKind::File, selected);
+        }
     });
+    if app.settings.show_website_form {
+        ui.add_space(8.0);
+        website_form(app, ui, selected);
+    }
     ui.add_space(8.0);
     let items = app.config.sections[si].items.clone();
     if items.is_empty() {
-        ui.label(RichText::new("No favourites yet. Add installed apps, choose a file, or drag one onto the sidebar.").color(p.text_dim));
+        ui.label(RichText::new("No favourites yet. Add installed apps, a folder or a website, or drag a file or folder onto the sidebar.").color(p.text_dim));
         return;
     }
     let n = items.len();
@@ -694,6 +718,7 @@ fn target_text(t: &sidestage_core::LaunchTarget) -> String {
     match t {
         DesktopEntry { path } | Path { path, .. } => path.display().to_string(),
         AppsFolder { parsing_name } => parsing_name.clone(),
+        Url { url } => url.clone(),
         Command { program, args } => std::iter::once(program.clone())
             .chain(args.iter().cloned())
             .collect::<Vec<_>>()
@@ -701,35 +726,61 @@ fn target_text(t: &sidestage_core::LaunchTarget) -> String {
     }
 }
 
-fn add_from_file(app: &mut SidestageApp, section: &str) {
-    let mut dialog = rfd::FileDialog::new().set_title("Add a favourite");
-    if cfg!(windows) {
-        dialog = dialog
-            .add_filter(
-                "Programs and shortcuts",
-                &["lnk", "exe", "url", "bat", "cmd", "msc"],
-            )
-            .add_filter("All files", &["*"]);
-    }
-    let Some(path) = dialog.pick_file() else {
-        return;
-    };
-    match sidestage_platform::apps::from_path(&path) {
-        Some(entry) => {
-            let name = entry.name.clone();
-            if app
-                .config
-                .add_favourite(section, entry.into_favourite())
-                .is_some()
-            {
-                app.mark_dirty();
-                app.toast(format!("Added {name}"), false);
-            } else {
-                app.toast(format!("{name} is already in this section"), false);
+fn website_form(app: &mut SidestageApp, ui: &mut Ui, section: &str) {
+    let p = app.palette;
+    egui::Frame::new()
+        .fill(p.hover)
+        .corner_radius(10)
+        .inner_margin(12)
+        .show(ui, |ui| {
+            ui.label(RichText::new("Add a website").strong());
+            egui::Grid::new("website-form")
+                .num_columns(2)
+                .spacing([10.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Address");
+                    let url = ui.add(
+                        egui::TextEdit::singleline(&mut app.settings.website_url)
+                            .hint_text("https://example.com")
+                            .desired_width(320.0),
+                    );
+                    if url.changed() {
+                        app.settings.website_error = None;
+                    }
+                    ui.end_row();
+                    ui.label("Name");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.settings.website_name)
+                            .hint_text("Optional – defaults to the site name")
+                            .desired_width(320.0),
+                    );
+                    ui.end_row();
+                });
+            if let Some(e) = &app.settings.website_error {
+                ui.label(RichText::new(e).color(p.danger));
             }
-        }
-        None => app.toast(format!("Can't add {}", path.display()), true),
-    }
+            ui.horizontal(|ui| {
+                let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if ui.button("Add").clicked() || enter {
+                    match sidestage_platform::apps::website_entry(
+                        &app.settings.website_name,
+                        &app.settings.website_url,
+                    ) {
+                        Ok(entry) => {
+                            app.add_entry(section, entry);
+                            app.settings.website_name.clear();
+                            app.settings.website_url.clear();
+                            app.settings.show_website_form = false;
+                        }
+                        Err(e) => app.settings.website_error = Some(e),
+                    }
+                }
+                if ui.button("Cancel").clicked() {
+                    app.settings.show_website_form = false;
+                    app.settings.website_error = None;
+                }
+            });
+        });
 }
 
 fn app_picker(app: &mut SidestageApp, ui: &mut Ui, selected: &str) {
@@ -893,9 +944,47 @@ fn edit_favourite(app: &mut SidestageApp, ui: &mut Ui, fid: &str) {
                 }
                 app.mark_dirty();
             }
-            ui.label(RichText::new(target_text(&fav.target)).small().weak());
+            if let sidestage_core::LaunchTarget::Url { url } = &fav.target {
+                ui.label(RichText::new("Address").small().weak());
+                let editing = app
+                    .settings
+                    .url_edit
+                    .get_or_insert_with(|| (fid.to_string(), url.clone()));
+                if editing.0 != fid {
+                    *editing = (fid.to_string(), url.clone());
+                }
+                let resp = ui.add(egui::TextEdit::singleline(&mut editing.1).desired_width(280.0));
+                if resp.lost_focus()
+                    || ui.input(|i| i.key_pressed(egui::Key::Enter)) && resp.has_focus()
+                {
+                    match sidestage_core::config::normalize_web_url(&editing.1) {
+                        Ok(u) => {
+                            editing.1 = u.clone();
+                            if let Some(f) = app.config.favourite_mut(fid) {
+                                f.target = sidestage_core::LaunchTarget::Url { url: u };
+                            }
+                            app.mark_dirty();
+                        }
+                        Err(e) => app.toast(e, true),
+                    }
+                }
+            } else {
+                ui.label(RichText::new(target_text(&fav.target)).small().weak());
+            }
         });
     });
+    ui.add_space(10.0);
+    let mut include = fav.include_in_launch;
+    if ui
+        .checkbox(&mut include, "Include in section launch")
+        .on_hover_text("“Launch section” opens every included favourite. Clicking this favourite always opens it.")
+        .changed()
+    {
+        if let Some(f) = app.config.favourite_mut(fid) {
+            f.include_in_launch = include;
+        }
+        app.mark_dirty();
+    }
     ui.add_space(12.0);
     ui.label(RichText::new("Icon").strong());
     ui.horizontal(|ui| {

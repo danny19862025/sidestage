@@ -34,6 +34,19 @@ pub struct AutoHide {
     pub leave_since: Option<Instant>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BatchState {
+    Running,
+    Finished(Instant),
+}
+
+/// What a background picker should ask for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickKind {
+    File,
+    Folder,
+}
+
 pub struct Toast {
     pub text: String,
     pub error: bool,
@@ -82,6 +95,15 @@ pub struct SidestageApp {
     pub toast: Option<Toast>,
     pub section_rects: Vec<(String, egui::Rect)>,
     pub menu_open: bool,
+    /// "Launch section" batches: running, or finished (cool-down so a
+    /// double-click can't start the same batch twice).
+    section_launch: HashMap<String, BatchState>,
+    batch_tx: mpsc::Sender<(String, String, sidestage_core::batch::BatchReport)>,
+    batch_rx: Receiver<(String, String, sidestage_core::batch::BatchReport)>,
+    /// Results of background file/folder pickers: (section, path).
+    pick_tx: mpsc::Sender<(String, PathBuf)>,
+    pick_rx: Receiver<(String, PathBuf)>,
+    picking: bool,
 
     pub settings_open: bool,
     pub settings: SettingsUi,
@@ -134,6 +156,8 @@ impl SidestageApp {
                 .ok();
         }
 
+        let (batch_tx, batch_rx) = mpsc::channel();
+        let (pick_tx, pick_rx) = mpsc::channel();
         let (tray_tx, tray_rx) = mpsc::channel();
         let tray = Tray::new(tray_tx, ctx.clone());
 
@@ -176,6 +200,12 @@ impl SidestageApp {
             toast: None,
             section_rects: Vec::new(),
             menu_open: false,
+            section_launch: HashMap::new(),
+            batch_tx,
+            batch_rx,
+            pick_tx,
+            pick_rx,
+            picking: false,
             settings_open: open_settings,
             settings: SettingsUi::default(),
             tray_rx,
@@ -208,6 +238,141 @@ impl SidestageApp {
             error,
             until: Instant::now() + Duration::from_secs(if error { 6 } else { 3 }),
         });
+    }
+
+    /// Whether "Launch section" can run now: `Ok(count)` or why not.
+    pub fn section_launch_status(&self, section_id: &str) -> Result<usize, &'static str> {
+        match self.section_launch.get(section_id) {
+            Some(BatchState::Running) => return Err("Launching…"),
+            Some(BatchState::Finished(t)) if t.elapsed() < Duration::from_secs(3) => {
+                return Err("Launched")
+            }
+            _ => {}
+        }
+        match self.config.section_launch_list(section_id).len() {
+            0 => Err("Nothing to launch"),
+            n => Ok(n),
+        }
+    }
+
+    /// Starts every included favourite of a section, in order, off the UI
+    /// thread. Failures do not stop the batch; a summary toast follows.
+    pub fn launch_section(&mut self, ctx: &egui::Context, section_id: &str) {
+        if self.section_launch_status(section_id).is_err() {
+            return;
+        }
+        let items = self.config.section_launch_list(section_id);
+        let name = self
+            .config
+            .section_index(section_id)
+            .map(|i| self.config.sections[i].name.clone())
+            .unwrap_or_default();
+        log::info!("launching section {name} ({} items)", items.len());
+        self.section_launch
+            .insert(section_id.to_string(), BatchState::Running);
+        let (tx, ctx, sid) = (self.batch_tx.clone(), ctx.clone(), section_id.to_string());
+        std::thread::Builder::new()
+            .name("section-launch".into())
+            .spawn(move || {
+                sidestage_platform::init_worker_thread();
+                let mut first = true;
+                let report = sidestage_core::batch::run_batch(&items, |fav| {
+                    // A short gap keeps app start-up (and window placement) orderly.
+                    if !std::mem::take(&mut first) {
+                        std::thread::sleep(Duration::from_millis(150));
+                    }
+                    let r = sidestage_platform::launch::launch(&fav.target)
+                        .map_err(|e| format!("{e:#}"));
+                    if let Err(e) = &r {
+                        log::warn!("section launch: {} failed: {e}", fav.name);
+                    }
+                    r
+                });
+                let _ = tx.send((sid, name, report));
+                ctx.request_repaint();
+            })
+            .ok();
+    }
+
+    /// Opens a file or folder chooser without blocking the sidebar.
+    pub fn spawn_pick(&mut self, ctx: &egui::Context, kind: PickKind, section_id: &str) {
+        if self.picking {
+            return;
+        }
+        self.picking = true;
+        let (tx, ctx, sid) = (self.pick_tx.clone(), ctx.clone(), section_id.to_string());
+        std::thread::spawn(move || {
+            sidestage_platform::init_worker_thread();
+            let picked = match kind {
+                PickKind::Folder => rfd::FileDialog::new()
+                    .set_title("Add a folder")
+                    .pick_folder(),
+                PickKind::File => {
+                    let mut d = rfd::FileDialog::new().set_title("Add a favourite");
+                    if cfg!(windows) {
+                        d = d
+                            .add_filter(
+                                "Programs and shortcuts",
+                                &["lnk", "exe", "url", "bat", "cmd", "msc"],
+                            )
+                            .add_filter("All files", &["*"]);
+                    }
+                    d.pick_file()
+                }
+            };
+            // An empty path tells the UI the dialog closed.
+            let _ = tx.send((sid, picked.unwrap_or_default()));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Adds an app entry to a section with feedback.
+    pub fn add_entry(
+        &mut self,
+        section_id: &str,
+        entry: sidestage_platform::apps::AppEntry,
+    ) -> bool {
+        let name = entry.name.clone();
+        if self
+            .config
+            .add_favourite(section_id, entry.into_favourite())
+            .is_some()
+        {
+            self.mark_dirty();
+            self.toast(format!("Added {name}"), false);
+            true
+        } else {
+            self.toast(format!("{name} is already in this section"), false);
+            false
+        }
+    }
+
+    fn poll_background(&mut self) {
+        while let Ok((sid, name, report)) = self.batch_rx.try_recv() {
+            self.section_launch
+                .insert(sid, BatchState::Finished(Instant::now()));
+            for id in &report.launched {
+                self.launched.insert(id.clone(), Instant::now());
+            }
+            let failed = !report.failed.is_empty();
+            log::info!("section launch finished: {}", report.summary(&name));
+            self.toast(report.summary(&name), failed);
+        }
+        self.section_launch.retain(
+            |_, s| !matches!(s, BatchState::Finished(t) if t.elapsed() > Duration::from_secs(4)),
+        );
+        while let Ok((sid, path)) = self.pick_rx.try_recv() {
+            self.picking = false;
+            if path.as_os_str().is_empty() {
+                continue;
+            }
+            match sidestage_platform::apps::from_path(&path) {
+                Some(entry) => {
+                    self.add_entry(&sid, entry);
+                }
+                None => self.toast(format!("Can't add {}", path.display()), true),
+            }
+        }
     }
 
     pub fn launch(&mut self, favourite_id: &str) {
@@ -509,6 +674,7 @@ impl eframe::App for SidestageApp {
         self.textures.poll(ctx);
         self.drain_events(ctx);
         self.handle_tray(ctx);
+        self.poll_background();
         self.update_autohide(ctx);
         self.place_panel(ctx, frame);
         self.sync_keyboard();
