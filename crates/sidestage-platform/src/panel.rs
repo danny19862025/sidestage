@@ -60,6 +60,20 @@ pub trait LiveThumbnails {
     fn end(&mut self);
 }
 
+/// A file or app drag the platform tracks itself (Windows: the sidebar's own
+/// OLE drop target, which also accepts Start-menu apps). Positions are in
+/// client-area physical pixels.
+#[derive(Default)]
+pub struct NativeDrag {
+    /// Something droppable is over the sidebar.
+    pub hovering: bool,
+    pub pos: Option<[f32; 2]>,
+    /// Items dropped since the last poll; `Err` names what couldn't be added.
+    pub dropped: Vec<Result<crate::apps::AppEntry, String>>,
+    /// Where the last drop happened.
+    pub drop_pos: Option<[f32; 2]>,
+}
+
 /// Platform handle to the sidebar's native window.
 pub struct Panel(crate::imp::panel::Panel);
 
@@ -107,6 +121,17 @@ impl Panel {
     /// Windows only; elsewhere a no-op.
     pub fn set_shape(&mut self, rects: Option<Vec<[i32; 4]>>) {
         self.0.set_shape(rects)
+    }
+
+    /// Drag-and-drop the platform handles itself, or `None` to use the
+    /// toolkit's file-drop events (Linux).
+    pub fn poll_drag(&mut self) -> Option<NativeDrag> {
+        self.0.poll_drag()
+    }
+
+    /// Called whenever the native drag state changes, to wake the UI.
+    pub fn set_drag_waker(&mut self, waker: crate::Waker) {
+        self.0.set_drag_waker(waker)
     }
 
     /// Releases reserved space (call before exit).

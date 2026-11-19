@@ -3346,6 +3346,7 @@ dependencies = [
  "wayland-protocols-plasma",
  "wayland-protocols-wlr",
  "windows",
+ "windows-core",
  "x11rb",
  "zbus",
 ]

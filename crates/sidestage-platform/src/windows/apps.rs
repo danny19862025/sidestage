@@ -67,28 +67,33 @@ pub fn installed_apps() -> Vec<AppEntry> {
             if name.to_lowercase().starts_with("uninstall") {
                 continue;
             }
-            // Desktop apps report their exe path; show the file name as a hint.
-            let subtitle = if aumid.contains('\\') {
-                Path::new(&aumid)
-                    .file_name()
-                    .map(|f| f.to_string_lossy().into_owned())
-            } else {
-                Some("Microsoft Store app".to_string())
-            };
-            out.push(AppEntry {
-                keywords: vec![aumid.clone()],
-                name,
-                subtitle,
-                target: LaunchTarget::AppsFolder {
-                    parsing_name: aumid,
-                },
-                icon: IconSource::Auto,
-            });
+            out.push(apps_folder_entry(name, aumid));
         }
     }
     out.sort_by_key(|a| a.name.to_lowercase());
     out.dedup_by(|a, b| a.target == b.target);
     out
+}
+
+/// A Start-menu app, launched through `shell:AppsFolder\<AUMID>`.
+pub(crate) fn apps_folder_entry(name: String, aumid: String) -> AppEntry {
+    // Desktop apps report their exe path; show the file name as a hint.
+    let subtitle = if aumid.contains('\\') {
+        Path::new(&aumid)
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+    } else {
+        Some("Microsoft Store app".to_string())
+    };
+    AppEntry {
+        keywords: vec![aumid.clone()],
+        name,
+        subtitle,
+        target: LaunchTarget::AppsFolder {
+            parsing_name: aumid,
+        },
+        icon: IconSource::Auto,
+    }
 }
 
 pub fn from_path(path: &Path) -> Option<AppEntry> {

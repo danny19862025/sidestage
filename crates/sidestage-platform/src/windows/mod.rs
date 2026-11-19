@@ -11,6 +11,7 @@
 
 pub mod apps;
 mod backend;
+mod drop;
 pub mod hotkey;
 pub mod icons;
 pub mod panel;

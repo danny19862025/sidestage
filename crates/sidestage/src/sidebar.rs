@@ -1,6 +1,5 @@
 //! The sidebar: header, favourites (top) and minimized windows (bottom).
 
-use std::path::PathBuf;
 use std::time::Instant;
 
 use egui::{
@@ -9,6 +8,7 @@ use egui::{
 };
 use sidestage_core::config::Edge;
 use sidestage_core::{search, WindowGroup, WindowId, WindowInfo};
+use sidestage_platform::apps::AppEntry;
 use sidestage_platform::ThumbnailMode;
 
 use crate::app::{SidestageApp, HIDDEN_STRIP, OUTER_MARGIN};
@@ -46,9 +46,11 @@ enum Action {
     AddWebsite(String),
     OpenSettings(Tab),
     AddApps(Option<String>),
-    DropFiles {
+    /// Files or apps dropped onto the sidebar; `Err` names what couldn't
+    /// be turned into a favourite.
+    DropItems {
         section: Option<String>,
-        paths: Vec<PathBuf>,
+        items: Vec<Result<AppEntry, String>>,
     },
 }
 
@@ -379,7 +381,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
             app.settings_open = true;
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
-        Action::DropFiles { section, paths } => {
+        Action::DropItems { section, items } => {
             let section = section
                 .or_else(|| {
                     app.config
@@ -394,9 +396,9 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
                 return;
             };
             let mut added = 0;
-            for p in paths {
-                match sidestage_platform::apps::from_path(&p) {
-                    Some(entry) => {
+            for item in items {
+                match item {
+                    Ok(entry) => {
                         if app
                             .config
                             .add_favourite(&section, entry.into_favourite())
@@ -405,7 +407,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
                             added += 1;
                         }
                     }
-                    None => app.toast(format!("Can't add {}", p.display()), true),
+                    Err(what) => app.toast(format!("Can't add {what}"), true),
                 }
             }
             if added > 0 {
@@ -1249,7 +1251,7 @@ fn handle_os_drop(
     card: Rect,
     f: &mut Frame,
 ) {
-    let (hovering, dropped, ptr) = ctx.input(|i| {
+    let (raw_hovering, raw_dropped, latest) = ctx.input(|i| {
         (
             !i.raw.hovered_files.is_empty(),
             i.raw
@@ -1260,6 +1262,22 @@ fn handle_os_drop(
             i.pointer.latest_pos(),
         )
     });
+    // Windows tracks drags itself (the toolkit sees no pointer moves during
+    // a drag and can't read Start-menu apps); positions are physical px.
+    let ppp = ctx.pixels_per_point();
+    let to_pos = |p: Option<[f32; 2]>| p.map(|[x, y]| pos2(x / ppp, y / ppp));
+    let native_dropped = std::mem::take(&mut app.native_drag.dropped);
+    let hovering = raw_hovering || app.native_drag.hovering;
+    let ptr = if !native_dropped.is_empty() {
+        to_pos(app.native_drag.drop_pos.take())
+    } else {
+        to_pos(app.native_drag.pos).or(latest)
+    };
+    let mut dropped: Vec<Result<AppEntry, String>> = raw_dropped
+        .iter()
+        .map(|p| sidestage_platform::apps::from_path(p).ok_or_else(|| p.display().to_string()))
+        .collect();
+    dropped.extend(native_dropped);
     let section_at = |pos: Option<Pos2>| {
         pos.and_then(|p| {
             app.section_rects
@@ -1286,9 +1304,9 @@ fn handle_os_drop(
     }
     if !dropped.is_empty() {
         let section = section_at(ptr).map(|(id, _)| id);
-        f.actions.push(Action::DropFiles {
+        f.actions.push(Action::DropItems {
             section,
-            paths: dropped,
+            items: dropped,
         });
     }
 }

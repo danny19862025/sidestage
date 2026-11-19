@@ -102,6 +102,9 @@ pub struct SidestageApp {
     pub toast: Option<Toast>,
     pub section_rects: Vec<(String, egui::Rect)>,
     pub menu_open: bool,
+    /// Drag-and-drop tracked by the platform itself (Windows), polled each
+    /// frame; the toolkit's file-drop events are used where this is unset.
+    pub native_drag: sidestage_platform::panel::NativeDrag,
     unwanted_focus_since: Option<Instant>,
     keyboard_since: Option<Instant>,
     away_since: Option<Instant>,
@@ -225,6 +228,7 @@ impl SidestageApp {
             toast: None,
             section_rects: Vec::new(),
             menu_open: false,
+            native_drag: Default::default(),
             unwanted_focus_since: None,
             keyboard_since: None,
             away_since: None,
@@ -580,8 +584,9 @@ impl SidestageApp {
             self.unwanted_focus_since = None;
             return;
         }
-        let dragging =
-            ctx.input(|i| !i.raw.hovered_files.is_empty() || !i.raw.dropped_files.is_empty());
+        let dragging = ctx
+            .input(|i| !i.raw.hovered_files.is_empty() || !i.raw.dropped_files.is_empty())
+            || self.native_drag.hovering;
         if dragging {
             // Restart the grace period; hand back once the drag is over.
             self.unwanted_focus_since = Some(Instant::now());
@@ -666,7 +671,7 @@ impl SidestageApp {
             return;
         }
         let toolkit_hover = ctx.input(|i| i.pointer.hover_pos().is_some());
-        let files = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        let files = ctx.input(|i| !i.raw.hovered_files.is_empty()) || self.native_drag.hovering;
         // XWayland may not report the pointer leaving to a Wayland window;
         // the panel's own Enter/Leave tracking wins when it has an answer.
         let platform_hover = self.panel.as_mut().and_then(|p| p.pointer_inside());
@@ -735,7 +740,11 @@ impl SidestageApp {
         if self.panel.is_none() && !self.panel_failed {
             match frame.window_handle().map(|h| h.as_raw()) {
                 Ok(raw) => match Panel::attach(raw) {
-                    Ok(p) => self.panel = Some(p),
+                    Ok(mut p) => {
+                        let c = ctx.clone();
+                        p.set_drag_waker(std::sync::Arc::new(move || c.request_repaint()));
+                        self.panel = Some(p);
+                    }
                     Err(e) => {
                         log::error!("cannot manage sidebar window: {e:#}");
                         self.panel_failed = true;
@@ -909,6 +918,15 @@ impl eframe::App for SidestageApp {
             self.hotkey_status = st;
         }
         self.close_stale_ui(ctx);
+        if let Some(d) = self.panel.as_mut().and_then(|p| p.poll_drag()) {
+            // Keep drops not yet handled by the sidebar (it takes them).
+            let mut d = d;
+            if d.dropped.is_empty() && !self.native_drag.dropped.is_empty() {
+                d.dropped = std::mem::take(&mut self.native_drag.dropped);
+                d.drop_pos = self.native_drag.drop_pos;
+            }
+            self.native_drag = d;
+        }
         self.update_autohide(ctx);
         self.place_panel(ctx, frame);
         self.sync_keyboard(ctx);

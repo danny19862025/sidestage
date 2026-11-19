@@ -236,6 +236,9 @@ impl Panel {
                 &no_border as *const _ as *const _,
                 4,
             );
+            // Our own drop target: accepts Start-menu apps and knows where
+            // the pointer is during a drag (winit's does neither).
+            super::drop::register(hwnd);
         }
         Ok(Panel {
             hwnd,
@@ -381,6 +384,14 @@ impl Panel {
 
     pub fn set_blur_region(&mut self, _rects: Option<Vec<[i32; 4]>>) {}
 
+    pub fn poll_drag(&mut self) -> Option<crate::panel::NativeDrag> {
+        Some(super::drop::poll())
+    }
+
+    pub fn set_drag_waker(&mut self, waker: crate::Waker) {
+        super::drop::set_waker(waker);
+    }
+
     /// Clips the window to the arch with a window region, so the
     /// transparent corners around it pass clicks to the windows below.
     pub fn set_shape(&mut self, rects: Option<Vec<[i32; 4]>>) {
@@ -423,6 +434,7 @@ impl Panel {
 
     pub fn detach(&mut self) {
         self.thumbs.clear();
+        super::drop::revoke(self.hwnd);
         if self.appbar {
             let mut abd = self.appbar_data();
             unsafe { SHAppBarMessage(ABM_REMOVE, &mut abd) };

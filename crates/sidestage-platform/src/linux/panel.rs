@@ -588,6 +588,13 @@ impl Panel {
     /// only while auto-hidden.
     pub fn set_shape(&mut self, _rects: Option<Vec<[i32; 4]>>) {}
 
+    /// Linux uses the toolkit's (XDND) file-drop events.
+    pub fn poll_drag(&mut self) -> Option<crate::panel::NativeDrag> {
+        None
+    }
+
+    pub fn set_drag_waker(&mut self, _waker: crate::Waker) {}
+
     /// KWin's blur effect reads `_KDE_NET_WM_BLUR_BEHIND_REGION` (also for
     /// XWayland windows). An empty value would blur the whole window, so
     /// "off" deletes the property.
