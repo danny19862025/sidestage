@@ -102,6 +102,8 @@ pub struct SidestageApp {
     pub toast: Option<Toast>,
     pub section_rects: Vec<(String, egui::Rect)>,
     pub menu_open: bool,
+    unwanted_focus_since: Option<Instant>,
+    keyboard_since: Option<Instant>,
     away_since: Option<Instant>,
     /// Areas covered by fullscreen apps, from the backend.
     fullscreen: Vec<sidestage_core::FullscreenArea>,
@@ -223,6 +225,8 @@ impl SidestageApp {
             toast: None,
             section_rects: Vec::new(),
             menu_open: false,
+            unwanted_focus_since: None,
+            keyboard_since: None,
             away_since: None,
             fullscreen: Vec::new(),
             paused: false,
@@ -453,6 +457,9 @@ impl SidestageApp {
                 WindowEvent::Thumbnail { id, image } => {
                     self.textures.set_thumbnail(ctx, id, image.as_ref())
                 }
+                WindowEvent::SidebarActivated => {
+                    self.unwanted_focus_since = Some(Instant::now());
+                }
                 WindowEvent::Fullscreen(areas) => {
                     log::debug!("fullscreen areas: {areas:?}");
                     self.fullscreen = areas.clone();
@@ -515,6 +522,7 @@ impl SidestageApp {
                     }
                 }
                 TrayCommand::Search => self.open_search(ctx),
+                TrayCommand::TogglePin => self.toggle_pin(),
                 TrayCommand::Quit => self.quit(ctx),
             }
         }
@@ -551,7 +559,42 @@ impl SidestageApp {
 
     /// Whether the sidebar should currently be fully shown.
     pub fn wants_shown(&self) -> bool {
-        !self.config.settings.auto_hide || self.autohide.shown
+        !self.config.settings.auto_hide || self.config.settings.pinned || self.autohide.shown
+    }
+
+    pub fn toggle_pin(&mut self) {
+        self.config.settings.pinned = !self.config.settings.pinned;
+        self.autohide.shown = self.config.settings.pinned;
+        self.mark_dirty();
+    }
+
+    /// The sidebar accepts input so drag-and-drop works. When the window
+    /// manager activates it without the sidebar asking (a click, or a drag
+    /// entering it), give focus back to the previous window — but not while
+    /// a file drag is hovering, which would cancel the drop.
+    fn return_unwanted_focus(&mut self, ctx: &egui::Context) {
+        let Some(since) = self.unwanted_focus_since else {
+            return;
+        };
+        if self.keyboard_wanted || self.keyboard_granted {
+            self.unwanted_focus_since = None;
+            return;
+        }
+        let dragging =
+            ctx.input(|i| !i.raw.hovered_files.is_empty() || !i.raw.dropped_files.is_empty());
+        if dragging {
+            // Restart the grace period; hand back once the drag is over.
+            self.unwanted_focus_since = Some(Instant::now());
+            ctx.request_repaint_after(Duration::from_millis(100));
+            return;
+        }
+        if since.elapsed() >= Duration::from_millis(300) {
+            log::debug!("returning focus taken by a click/drag");
+            self.unwanted_focus_since = None;
+            self.backend.focus_previous();
+        } else {
+            ctx.request_repaint_after(Duration::from_millis(60));
+        }
     }
 
     /// Menus, search and renames can't see clicks in other apps, so they
@@ -568,6 +611,11 @@ impl SidestageApp {
             return;
         }
         let away = self.away_since.get_or_insert_with(Instant::now).elapsed();
+        log::trace!(
+            "stale-ui away={away:?} focused={focused} kbd_wanted={} granted={}",
+            self.keyboard_wanted,
+            self.keyboard_granted
+        );
         let pending =
             egui::Popup::is_any_open(ctx) || self.search_open || self.renaming_section.is_some();
         if !pending {
@@ -583,8 +631,16 @@ impl SidestageApp {
             self.menu_open = false;
         }
         // Typing continues while the sidebar has the keyboard; once another
-        // window took it, search/rename are abandoned.
-        if !focused || !self.keyboard_granted {
+        // window took it, search/rename are abandoned. Give a fresh search
+        // (e.g. from the global shortcut) time to receive focus first.
+        let settling = self
+            .keyboard_since
+            .map(|t| t.elapsed() < Duration::from_secs(2))
+            .unwrap_or(false)
+            || (self.keyboard_wanted && !self.keyboard_granted);
+        if settling {
+            ctx.request_repaint_after(Duration::from_millis(300));
+        } else if !focused || !self.keyboard_granted {
             if self.search_open {
                 log::debug!("closing search: sidebar lost focus");
                 self.search_open = false;
@@ -602,7 +658,7 @@ impl SidestageApp {
             return;
         }
         let s = &self.config.settings;
-        if !s.auto_hide {
+        if !s.auto_hide || s.pinned {
             self.autohide = AutoHide {
                 shown: true,
                 ..Default::default()
@@ -769,9 +825,24 @@ impl SidestageApp {
         now
     }
 
-    fn sync_keyboard(&mut self) {
+    fn sync_keyboard(&mut self, ctx: &egui::Context) {
+        // Until the toolkit reports focus, keep claiming it (the WM may
+        // activate us a moment after the request).
+        if self.keyboard_granted && !ctx.input(|i| i.focused) {
+            if let Some(since) = self.keyboard_since {
+                if since.elapsed() < Duration::from_secs(2) {
+                    if let Some(p) = self.panel.as_mut() {
+                        p.claim_keyboard();
+                    }
+                    ctx.request_repaint_after(Duration::from_millis(50));
+                }
+            }
+        }
         if self.keyboard_wanted != self.keyboard_granted {
             self.keyboard_granted = self.keyboard_wanted;
+            self.keyboard_since = self.keyboard_wanted.then(Instant::now);
+            self.backend
+                .set_sidebar_keyboard_wanted(self.keyboard_wanted);
             if let Some(p) = self.panel.as_mut() {
                 p.set_keyboard_focus(self.keyboard_wanted);
             }
@@ -812,6 +883,7 @@ impl SidestageApp {
         self.search_focus_request = true;
         self.search_selected = 0;
         self.keyboard_wanted = true;
+        self.away_since = None;
     }
 }
 
@@ -839,7 +911,8 @@ impl eframe::App for SidestageApp {
         self.close_stale_ui(ctx);
         self.update_autohide(ctx);
         self.place_panel(ctx, frame);
-        self.sync_keyboard();
+        self.sync_keyboard(ctx);
+        self.return_unwanted_focus(ctx);
         if let Some(t) = self.dirty_since {
             if t.elapsed() > Duration::from_millis(400) {
                 self.save_now();

@@ -41,6 +41,7 @@ x11rb::atom_manager! {
 }
 
 pub struct X11Backend {
+    keyboard_wanted: std::sync::Arc<std::sync::atomic::AtomicBool>,
     conn: Mutex<RustConnection>,
     root: Window,
     atoms: Atoms,
@@ -57,6 +58,10 @@ impl WindowBackend for X11Backend {
     }
     fn detects_fullscreen(&self) -> bool {
         true
+    }
+    fn set_sidebar_keyboard_wanted(&self, wanted: bool) {
+        self.keyboard_wanted
+            .store(wanted, std::sync::atomic::Ordering::Relaxed);
     }
     fn focus_previous(&self) {
         let prev = *self.last_active.lock().unwrap();
@@ -93,6 +98,8 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
     let (conn, _) = x11rb::connect(None)?;
     let last_active = std::sync::Arc::new(Mutex::new(None));
     let last_active2 = last_active.clone();
+    let keyboard_wanted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let keyboard_wanted2 = keyboard_wanted.clone();
     std::thread::Builder::new()
         .name("x11-ewmh".into())
         .spawn(move || {
@@ -108,6 +115,7 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
                 own_pid: std::process::id(),
                 last_active: last_active2,
                 current_active: None,
+                keyboard_wanted: keyboard_wanted2,
                 fullscreen: Vec::new(),
             };
             let _ = tx.send(WindowEvent::Status(BackendStatus {
@@ -120,6 +128,7 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
             }
         })?;
     Ok(X11Backend {
+        keyboard_wanted,
         conn: Mutex::new(cmd_conn),
         root,
         atoms,
@@ -140,6 +149,7 @@ struct Watcher {
     last_active: std::sync::Arc<Mutex<Option<u32>>>,
     current_active: Option<u32>,
     fullscreen: Vec<sidestage_core::FullscreenArea>,
+    keyboard_wanted: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Watcher {
@@ -165,6 +175,16 @@ impl Watcher {
             .ok()
             .and_then(|c| c.reply().ok())
             .and_then(|r| r.value32().and_then(|mut v| v.next()));
+        if pid == Some(self.own_pid) {
+            let title = self.string_prop(win, self.atoms._NET_WM_NAME, self.atoms.UTF8_STRING);
+            let wanted = self
+                .keyboard_wanted
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if title.as_deref() == Some("Sidestage") && !wanted {
+                let _ = self.tx.send(WindowEvent::SidebarActivated);
+                (self.waker)();
+            }
+        }
         if pid != Some(self.own_pid) {
             *self.last_active.lock().unwrap() = Some(win);
             self.current_active = Some(win);

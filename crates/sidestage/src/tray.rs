@@ -8,6 +8,8 @@ pub enum TrayCommand {
     ToggleSidebar,
     /// Global shortcut: open search with keyboard focus.
     Search,
+    /// Hold an auto-hidden sidebar open (or release it).
+    TogglePin,
     Quit,
 }
 
@@ -81,6 +83,12 @@ impl ksni::Tray for LinuxTray {
             }
             .into(),
             StandardItem {
+                label: "Keep sidebar open (pin)".into(),
+                activate: Box::new(|t: &mut Self| t.send(TrayCommand::TogglePin)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
                 label: "Settings…".into(),
                 icon_name: "configure".into(),
                 activate: Box::new(|t: &mut Self| t.send(TrayCommand::Settings)),
@@ -120,19 +128,29 @@ impl Tray {
         use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
         let menu = Menu::new();
         let toggle = MenuItem::new("Show / hide sidebar", true, None);
+        let pin = MenuItem::new("Keep sidebar open (pin)", true, None);
         let settings = MenuItem::new("Settings…", true, None);
         let quit = MenuItem::new("Quit Sidestage", true, None);
-        let _ = menu.append_items(&[&toggle, &settings, &PredefinedMenuItem::separator(), &quit]);
+        let _ = menu.append_items(&[
+            &toggle,
+            &pin,
+            &settings,
+            &PredefinedMenuItem::separator(),
+            &quit,
+        ]);
         let (toggle_id, settings_id, quit_id) = (
             toggle.id().clone(),
             settings.id().clone(),
             quit.id().clone(),
         );
+        let pin_id = pin.id().clone();
         let menu_tx = tx.clone();
         let menu_ctx = ctx.clone();
         MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
             let cmd = if e.id == toggle_id {
                 TrayCommand::ToggleSidebar
+            } else if e.id == pin_id {
+                TrayCommand::TogglePin
             } else if e.id == settings_id {
                 TrayCommand::Settings
             } else if e.id == quit_id {

@@ -34,6 +34,8 @@ x11rb::atom_manager! {
         _NET_ACTIVE_WINDOW,
         _NET_WORKAREA,
         WM_HINTS,
+        WM_PROTOCOLS,
+        WM_TAKE_FOCUS,
         _KDE_NET_WM_BLUR_BEHIND_REGION,
     }
 }
@@ -205,6 +207,11 @@ impl Panel {
             &[a._NET_WM_WINDOW_TYPE_DOCK],
         )?;
         self.set_input_hint(false)?;
+        // KWin's (and Mutter's) Wayland→XWayland drag-and-drop bridge only
+        // targets windows that accept input. "Globally active" (input=false
+        // + WM_TAKE_FOCUS) qualifies; focus taken by a click is handed back
+        // by the app (see SidestageApp::return_unwanted_focus).
+        self.add_take_focus()?;
         // The window is already mapped, so state changes go through the WM.
         for state in [
             a._NET_WM_STATE_ABOVE,
@@ -277,6 +284,49 @@ impl Panel {
             self.root,
             EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
             ev,
+        )?;
+        Ok(())
+    }
+
+    /// Adds WM_TAKE_FOCUS to WM_PROTOCOLS ("globally active" input model):
+    /// the WM asks before focusing us, and we simply don't accept.
+    fn add_take_focus(&self) -> Result<()> {
+        let a = &self.atoms;
+        let mut protos: Vec<u32> = self
+            .conn
+            .get_property(false, self.window, a.WM_PROTOCOLS, AtomEnum::ATOM, 0, 32)?
+            .reply()?
+            .value32()
+            .map(|v| v.collect())
+            .unwrap_or_default();
+        if !protos.contains(&a.WM_TAKE_FOCUS) {
+            protos.push(a.WM_TAKE_FOCUS);
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.window,
+                a.WM_PROTOCOLS,
+                AtomEnum::ATOM,
+                &protos,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn remove_take_focus(&self) -> Result<()> {
+        let a = &self.atoms;
+        let protos: Vec<u32> = self
+            .conn
+            .get_property(false, self.window, a.WM_PROTOCOLS, AtomEnum::ATOM, 0, 32)?
+            .reply()?
+            .value32()
+            .map(|v| v.filter(|p| *p != a.WM_TAKE_FOCUS).collect())
+            .unwrap_or_default();
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            a.WM_PROTOCOLS,
+            AtomEnum::ATOM,
+            &protos,
         )?;
         Ok(())
     }
@@ -513,6 +563,13 @@ impl Panel {
 
     pub fn set_keyboard_focus(&mut self, wanted: bool) {
         let r = (|| -> Result<()> {
+            // Passive model (input=true, no WM_TAKE_FOCUS) while typing so
+            // the WM really gives us the keyboard; globally active otherwise.
+            if wanted {
+                self.remove_take_focus()?;
+            } else {
+                self.add_take_focus()?;
+            }
             self.set_input_hint(wanted)?;
             if wanted {
                 // Source indication 2 = pager/taskbar: honoured without
@@ -600,6 +657,17 @@ impl Panel {
 
     pub fn live_thumbnails(&mut self) -> Option<&mut dyn LiveThumbnails> {
         None
+    }
+
+    /// Globally-active input model: once the WM has activated us, the
+    /// client sets X input focus itself.
+    pub fn claim_keyboard(&mut self) {
+        let _ = self.conn.set_input_focus(
+            x11rb::protocol::xproto::InputFocus::PARENT,
+            self.window,
+            x11rb::CURRENT_TIME,
+        );
+        let _ = self.conn.flush();
     }
 
     pub fn detach(&mut self) {

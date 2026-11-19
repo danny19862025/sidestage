@@ -35,6 +35,7 @@ enum Command {
 }
 
 pub struct KdeBackend {
+    keyboard_wanted: Arc<std::sync::atomic::AtomicBool>,
     last_active: Arc<Mutex<Option<String>>>,
     cmd: Sender<Command>,
     wake: Mutex<UnixStream>,
@@ -58,6 +59,10 @@ impl WindowBackend for KdeBackend {
     }
     fn detects_fullscreen(&self) -> bool {
         true
+    }
+    fn set_sidebar_keyboard_wanted(&self, wanted: bool) {
+        self.keyboard_wanted
+            .store(wanted, std::sync::atomic::Ordering::Relaxed);
     }
     fn focus_previous(&self) {
         let prev = self.last_active.lock().unwrap().clone();
@@ -113,6 +118,7 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
         spawn_thumbnailer(shot.filter(|_| thumbs), tx.clone(), waker.clone());
 
     let last_active = Arc::new(Mutex::new(None));
+    let keyboard_wanted = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut state = State {
         tx: tx.clone(),
         waker: waker.clone(),
@@ -122,6 +128,7 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
         resolver: AppResolver::new(tx.clone(), waker.clone()),
         thumbs: thumb_tx,
         last_active: last_active.clone(),
+        keyboard_wanted: keyboard_wanted.clone(),
         activation_seq: 0,
         fullscreen: Vec::new(),
         _mgr: mgr,
@@ -148,6 +155,7 @@ pub fn start(conn: Connection, tx: Sender<WindowEvent>, waker: Waker) -> Result<
             }
         })?;
     Ok(KdeBackend {
+        keyboard_wanted,
         last_active,
         cmd: cmd_tx,
         wake: Mutex::new(wake_w),
@@ -280,6 +288,7 @@ struct State {
     resolver: AppResolver,
     thumbs: Option<Sender<String>>,
     last_active: Arc<Mutex<Option<String>>>,
+    keyboard_wanted: Arc<std::sync::atomic::AtomicBool>,
     activation_seq: u64,
     fullscreen: Vec<sidestage_core::FullscreenArea>,
     _mgr: OrgKdePlasmaWindowManagement,
@@ -433,6 +442,7 @@ impl Dispatch<OrgKdePlasmaWindow, String> for State {
         let was_min = w.flags & STATE_MINIMIZED != 0;
         let mut changed = true;
         let mut fs_dirty = false;
+        let mut give_back = false;
         match event {
             E::TitleChanged { title } => w.title = title,
             E::AppIdChanged { app_id } => w.app_id = app_id,
@@ -443,6 +453,13 @@ impl Dispatch<OrgKdePlasmaWindow, String> for State {
                 if flags & STATE_ACTIVE != 0 && w.flags & STATE_ACTIVE == 0 {
                     state.activation_seq += 1;
                     w.activated = state.activation_seq;
+                    // The sidebar itself (not Settings) became active from a
+                    // click while nothing wants the keyboard.
+                    give_back = w.pid == state.own_pid
+                        && w.title == "Sidestage"
+                        && !state
+                            .keyboard_wanted
+                            .load(std::sync::atomic::Ordering::Relaxed);
                 }
                 if flags & STATE_ACTIVE != 0 && w.pid != state.own_pid && w.pid != 0 {
                     *state.last_active.lock().unwrap() = Some(uuid.clone());
@@ -481,6 +498,12 @@ impl Dispatch<OrgKdePlasmaWindow, String> for State {
         }
         if fs_dirty {
             state.update_fullscreen();
+        }
+        if give_back {
+            // The app decides (a drag may be in progress) and then calls
+            // focus_previous().
+            let _ = state.tx.send(WindowEvent::SidebarActivated);
+            (state.waker)();
         }
     }
 }

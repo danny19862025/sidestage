@@ -10,6 +10,7 @@ pub enum Glyph {
     Gear,
     More,
     Windows,
+    Pin { on: bool },
 }
 
 pub fn paint(p: &Painter, rect: Rect, glyph: Glyph, color: Color32) {
@@ -44,6 +45,41 @@ pub fn paint(p: &Painter, rect: Rect, glyph: Glyph, color: Color32) {
             }
             p.add(Shape::closed_line(pts, stroke));
             p.circle_stroke(c, s * 0.11, stroke);
+        }
+        Glyph::Pin { on } => {
+            // Push-pin: cap, body, needle. Leans when free, upright and
+            // filled when pinned.
+            let tilt = if on { 0.0 } else { std::f32::consts::FRAC_PI_4 };
+            let rot = |v: egui::Vec2| {
+                c + vec2(
+                    v.x * tilt.cos() - v.y * tilt.sin(),
+                    v.x * tilt.sin() + v.y * tilt.cos(),
+                )
+            };
+            let cap = Stroke::new(w * 1.6, color);
+            p.line_segment(
+                [rot(vec2(-s * 0.2, -s * 0.3)), rot(vec2(s * 0.2, -s * 0.3))],
+                cap,
+            );
+            let body = vec![
+                rot(vec2(-s * 0.11, -s * 0.28)),
+                rot(vec2(s * 0.11, -s * 0.28)),
+                rot(vec2(s * 0.16, s * 0.05)),
+                rot(vec2(-s * 0.16, s * 0.05)),
+            ];
+            if on {
+                p.add(egui::Shape::convex_polygon(body, color, Stroke::NONE));
+            } else {
+                p.add(egui::Shape::closed_line(body, stroke));
+            }
+            p.line_segment(
+                [
+                    rot(vec2(-s * 0.26, s * 0.06)),
+                    rot(vec2(s * 0.26, s * 0.06)),
+                ],
+                stroke,
+            );
+            p.line_segment([rot(vec2(0.0, s * 0.06)), rot(vec2(0.0, s * 0.4))], stroke);
         }
         Glyph::More => {
             for dx in [-1.0, 0.0, 1.0] {

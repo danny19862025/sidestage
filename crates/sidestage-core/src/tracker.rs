@@ -54,6 +54,9 @@ pub enum WindowEvent {
     Status(BackendStatus),
     /// Screen areas currently covered by a fullscreen app (empty = none).
     Fullscreen(Vec<FullscreenArea>),
+    /// The window manager activated the sidebar although it didn't ask for
+    /// the keyboard (a click, or a drag entering it).
+    SidebarActivated,
 }
 
 /// Where a fullscreen app is, as the backend knows it.

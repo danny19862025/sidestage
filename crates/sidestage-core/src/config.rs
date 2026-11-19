@@ -257,6 +257,8 @@ pub struct Settings {
     pub columns: u8,
     /// Opacity of the sidebar panel (0.2 = glassy … 1.0 = solid).
     pub opacity: f32,
+    /// Auto-hide is temporarily held open (pin button / tray).
+    pub pinned: bool,
 }
 
 impl Default for Settings {
@@ -278,6 +280,7 @@ impl Default for Settings {
             pause_in_fullscreen: true,
             columns: 0,
             opacity: 0.72,
+            pinned: false,
         }
     }
 }

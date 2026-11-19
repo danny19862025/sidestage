@@ -62,6 +62,11 @@ pub trait WindowBackend: Send {
     fn restore(&self, id: &WindowId);
     /// Asks for a fresh still preview (Snapshot mode only). Best effort.
     fn refresh_thumbnail(&self, _id: &WindowId) {}
+    /// Tells the backend whether the sidebar currently wants the keyboard
+    /// (search, rename). When it doesn't and the window manager activates
+    /// the sidebar anyway (a click — the sidebar must accept input for
+    /// drag-and-drop), the backend gives focus back to the previous window.
+    fn set_sidebar_keyboard_wanted(&self, _wanted: bool) {}
     /// Whether this backend reports [`WindowEvent::Fullscreen`].
     fn detects_fullscreen(&self) -> bool {
         false

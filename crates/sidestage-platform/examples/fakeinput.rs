@@ -149,6 +149,35 @@ mod imp {
                     pause(15);
                 }
             }
+            Some("dragpath") => {
+                // dragpath X0 Y0 X1 Y1 ... : press at the first point, glide
+                // through each waypoint (lingering ~1 s), release at the last.
+                let pts: Vec<(f64, f64)> = (1..args.len())
+                    .step_by(2)
+                    .map(|i| (n(i), n(i + 1)))
+                    .collect();
+                fi.pointer_motion_absolute(pts[0].0, pts[0].1);
+                sync(&mut queue);
+                pause(150);
+                fi.button(BTN_LEFT, 1);
+                sync(&mut queue);
+                for w in pts.windows(2) {
+                    let ((ax, ay), (bx, by)) = (w[0], w[1]);
+                    for i in 1..=20 {
+                        let t = i as f64 / 20.0;
+                        fi.pointer_motion_absolute(ax + (bx - ax) * t, ay + (by - ay) * t);
+                        sync(&mut queue);
+                        pause(25);
+                    }
+                    for k in 0..12 {
+                        fi.pointer_motion_absolute(bx + if k % 2 == 0 { 1.0 } else { -1.0 }, by);
+                        sync(&mut queue);
+                        pause(80);
+                    }
+                }
+                pause(300);
+                fi.button(BTN_LEFT, 0);
+            }
             Some("drag") => {
                 fi.pointer_motion_absolute(n(1), n(2));
                 sync(&mut queue);

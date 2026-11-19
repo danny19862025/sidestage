@@ -83,6 +83,12 @@ impl Panel {
         self.0.live_thumbnails()
     }
 
+    /// Takes keyboard focus now that the window manager activated the
+    /// sidebar (needed for X11's globally-active input model).
+    pub fn claim_keyboard(&mut self) {
+        self.0.claim_keyboard()
+    }
+
     /// Pointer-inside state tracked by the platform when the toolkit's own
     /// enter/leave reporting is unreliable (XWayland). `None` = use the toolkit.
     pub fn pointer_inside(&mut self) -> Option<bool> {

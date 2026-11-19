@@ -40,6 +40,7 @@ enum Action {
     ToggleGroup(String),
     LaunchSection(String),
     RestoreAll(String),
+    TogglePin,
     ToggleInclude(String),
     AddFolder(String),
     AddWebsite(String),
@@ -315,6 +316,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
         }
         Action::Restore(id) => app.restore(&id),
         Action::RestoreAll(key) => app.restore_stack(&key),
+        Action::TogglePin => app.toggle_pin(),
         Action::ToggleGroup(key) => {
             if !app.expanded_groups.remove(&key) {
                 app.expanded_groups.insert(key);
@@ -427,6 +429,17 @@ fn header(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
+            if app.config.settings.auto_hide {
+                let pinned = app.config.settings.pinned;
+                let tip = if pinned {
+                    "Pinned open — click to let it auto-hide again"
+                } else {
+                    "Keep the sidebar open (e.g. while dragging apps in)"
+                };
+                if glyph_button(ui, &p, Glyph::Pin { on: pinned }, tip, pinned).clicked() {
+                    f.actions.push(Action::TogglePin);
+                }
+            }
             if glyph_button(ui, &p, Glyph::Gear, "Settings", false).clicked() {
                 f.actions.push(Action::OpenSettings(Tab::Appearance));
             }

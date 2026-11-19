@@ -124,6 +124,7 @@ fn main() {
             }
             WindowEvent::Status(s) => println!("STATUS {s:?}"),
             WindowEvent::Fullscreen(a) => println!("FULLSCREEN {a:?}"),
+            WindowEvent::SidebarActivated => println!("SIDEBAR-ACTIVATED"),
         }
         if tracker.apply(&ev) {
             let g = tracker.groups();
