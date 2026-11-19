@@ -30,8 +30,17 @@ fn main() {
     while Instant::now() < end {
         if let Some((t, id)) = restore_at.clone() {
             if Instant::now() >= t {
-                println!("RESTORE {id}");
-                backend.restore(&id);
+                if let Some(app) = restore_title
+                    .as_deref()
+                    .and_then(|r| r.strip_prefix("ALL:"))
+                {
+                    let ids = tracker.restore_all_order(app);
+                    println!("RESTORE_ALL {app} {ids:?}");
+                    backend.restore_many(&ids);
+                } else {
+                    println!("RESTORE {id}");
+                    backend.restore(&id);
+                }
                 restore_at = None;
             }
         }
@@ -44,7 +53,21 @@ fn main() {
                     "UPSERT min={} app={} ({}) title={:?} id={}",
                     w.minimized, w.app_key, w.app_name, w.title, w.id
                 );
-                if w.minimized {
+                if let Some(app) = restore_title
+                    .as_deref()
+                    .and_then(|r| r.strip_prefix("ALL:"))
+                {
+                    if w.minimized
+                        && w.app_key == app
+                        && restore_at.is_none()
+                        && tracker.restore_all_order(app).len() >= 1
+                    {
+                        restore_at = Some((
+                            Instant::now() + Duration::from_secs(2),
+                            sidestage_core::WindowId(String::new()),
+                        ));
+                    }
+                } else if w.minimized {
                     if let Some(sub) = &restore_title {
                         if w.title.contains(sub.as_str()) && restore_at.is_none() {
                             restore_at =
@@ -56,6 +79,18 @@ fn main() {
             WindowEvent::Removed(id) => println!("REMOVED {id}"),
             WindowEvent::Snapshot(l) => {
                 println!("SNAPSHOT {} windows", l.len());
+                if let Some(app) = restore_title
+                    .as_deref()
+                    .and_then(|r| r.strip_prefix("ALL:"))
+                {
+                    let n = l.iter().filter(|w| w.minimized && w.app_key == app).count();
+                    if n >= 2 && restore_at.is_none() {
+                        restore_at = Some((
+                            Instant::now() + Duration::from_secs(2),
+                            sidestage_core::WindowId(String::new()),
+                        ));
+                    }
+                }
                 for w in l {
                     println!(
                         "  min={} app={} ({}) title={:?} id={}",

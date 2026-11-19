@@ -391,6 +391,19 @@ impl SidestageApp {
         }
     }
 
+    /// Restores every still-minimized window of an app's stack.
+    pub fn restore_stack(&mut self, app_key: &str) {
+        let ids = self.tracker.restore_all_order(app_key);
+        if ids.is_empty() {
+            return;
+        }
+        log::info!("restoring {} windows of {app_key}", ids.len());
+        for id in &ids {
+            self.pending_restore.insert(id.clone(), Instant::now());
+        }
+        self.backend.restore_many(&ids);
+    }
+
     pub fn restore(&mut self, id: &WindowId) {
         log::info!("restoring {id}");
         self.pending_restore.insert(id.clone(), Instant::now());

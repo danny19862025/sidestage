@@ -39,6 +39,7 @@ enum Action {
     Restore(WindowId),
     ToggleGroup(String),
     LaunchSection(String),
+    RestoreAll(String),
     ToggleInclude(String),
     AddFolder(String),
     AddWebsite(String),
@@ -300,6 +301,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
         Action::Restore(id) => app.restore(&id),
+        Action::RestoreAll(key) => app.restore_stack(&key),
         Action::ToggleGroup(key) => {
             if !app.expanded_groups.remove(&key) {
                 app.expanded_groups.insert(key);
@@ -1262,9 +1264,10 @@ fn group(
             ppp,
             hide_live,
         );
+        stack_menu(&resp, f, g);
         if resp
             .on_hover_text(format!(
-                "{} — {} windows. Click to expand.",
+                "{} — {} windows. Click to expand, right-click to restore all.",
                 g.app_name,
                 g.windows.len()
             ))
@@ -1276,6 +1279,7 @@ fn group(
     }
     // Expanded stack: header + one card per window.
     let (hrect, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
+    stack_menu(&hresp, f, g);
     if hresp.hovered() {
         ui.painter().rect_filled(hrect, 8.0, p.hover);
     }
@@ -1666,4 +1670,19 @@ impl Arch {
         }
         out
     }
+}
+
+/// Right-click menu of a minimized app stack.
+fn stack_menu(resp: &egui::Response, f: &mut Frame, g: &WindowGroup) {
+    resp.context_menu(|ui| {
+        if ui
+            .button(format!("Restore all windows ({})", g.windows.len()))
+            .clicked()
+        {
+            f.actions.push(Action::RestoreAll(g.app_key.clone()));
+        }
+        if ui.button("Show windows").clicked() {
+            f.actions.push(Action::ToggleGroup(g.app_key.clone()));
+        }
+    });
 }

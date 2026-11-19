@@ -26,8 +26,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON, GCLP_HICONSM, GWL_EXSTYLE, GW_OWNER,
     HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG, SW_RESTORE,
-    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON, WM_TIMER, WS_EX_APPWINDOW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    SW_SHOWNOACTIVATE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON, WM_TIMER,
+    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::icons;
@@ -72,6 +72,22 @@ impl WindowBackend for Win32Backend {
             // right, so the restored window may be activated.
             let _ = SetForegroundWindow(hwnd);
         }
+    }
+
+    fn restore_many(&self, ids: &[WindowId]) {
+        let Some((last, rest)) = ids.split_last() else {
+            return;
+        };
+        for id in rest {
+            let Some(hwnd) = hwnd_of(id) else { continue };
+            unsafe {
+                // Restore without activating, so only the last one takes focus.
+                if IsWindow(Some(hwnd)).as_bool() && IsIconic(hwnd).as_bool() {
+                    let _ = ShowWindowAsync(hwnd, SW_SHOWNOACTIVATE);
+                }
+            }
+        }
+        self.restore(last);
     }
 }
 
@@ -305,6 +321,7 @@ impl State {
                 title,
                 minimized,
                 icon_hint: Some(exe),
+                minimized_at: None,
             })
         }
     }

@@ -28,6 +28,10 @@ pub struct WindowInfo {
     pub minimized: bool,
     /// Hints the platform icon resolver can use (theme name, desktop id, exe).
     pub icon_hint: Option<String>,
+    /// When the backend knows it: a monotonic timestamp of the moment the
+    /// window was minimized (orders stacks correctly even for windows that
+    /// were minimized before Sidestage started).
+    pub minimized_at: Option<u64>,
 }
 
 /// Messages from a platform backend to the UI thread.
@@ -77,6 +81,15 @@ pub struct WindowTracker {
     windows: HashMap<WindowId, Tracked>,
     seq: u64,
     generation: u64,
+}
+
+/// Older-minimized first. Backend timestamps win over observation order.
+fn minimized_cmp(a: &Tracked, b: &Tracked) -> std::cmp::Ordering {
+    match (a.info.minimized_at, b.info.minimized_at) {
+        (Some(x), Some(y)) if x != y => x.cmp(&y),
+        _ => a.minimized_seq.cmp(&b.minimized_seq),
+    }
+    .then_with(|| a.info.id.cmp(&b.info.id))
 }
 
 impl WindowTracker {
@@ -162,14 +175,23 @@ impl WindowTracker {
 
     /// Minimized windows grouped by application. Groups are ordered by their
     /// most recently minimized member so the newest stays on top.
+    /// Windows of one app's stack that are still minimized, oldest
+    /// minimized first: restoring in this order leaves the most recently
+    /// minimized window on top and focused.
+    pub fn restore_all_order(&self, app_key: &str) -> Vec<WindowId> {
+        let mut v: Vec<&Tracked> = self
+            .windows
+            .values()
+            .filter(|t| t.info.minimized && t.info.app_key == app_key)
+            .collect();
+        v.sort_by(|a, b| minimized_cmp(a, b));
+        v.into_iter().map(|t| t.info.id.clone()).collect()
+    }
+
     pub fn groups(&self) -> Vec<WindowGroup> {
         let mut minimized: Vec<&Tracked> =
             self.windows.values().filter(|t| t.info.minimized).collect();
-        minimized.sort_by(|a, b| {
-            b.minimized_seq
-                .cmp(&a.minimized_seq)
-                .then_with(|| a.info.id.cmp(&b.info.id))
-        });
+        minimized.sort_by(|a, b| minimized_cmp(b, a));
         let mut order: Vec<String> = Vec::new();
         let mut by_app: HashMap<&str, WindowGroup> = HashMap::new();
         for t in minimized {
@@ -206,6 +228,7 @@ mod tests {
             title: format!("{id} title"),
             minimized: min,
             icon_hint: None,
+            minimized_at: None,
         }
     }
 
@@ -250,6 +273,54 @@ mod tests {
             ["3", "1"]
         );
         assert_eq!(g[1].app_key, "browser");
+    }
+
+    #[test]
+    fn restore_all_order_is_oldest_first_and_only_minimized() {
+        let mut t = WindowTracker::new();
+        for (id, app) in [
+            ("1", "editor"),
+            ("2", "editor"),
+            ("3", "editor"),
+            ("4", "browser"),
+        ] {
+            t.apply(&WindowEvent::Upsert(w(id, app, false)));
+        }
+        t.apply(&WindowEvent::Upsert(w("2", "editor", true)));
+        t.apply(&WindowEvent::Upsert(w("4", "browser", true)));
+        t.apply(&WindowEvent::Upsert(w("1", "editor", true)));
+        let ids = |v: Vec<WindowId>| v.into_iter().map(|i| i.0).collect::<Vec<_>>();
+        assert_eq!(
+            ids(t.restore_all_order("editor")),
+            ["2", "1"],
+            "window 3 is not minimized"
+        );
+        // A window closing mid-way simply drops out.
+        t.apply(&WindowEvent::Removed(WindowId("2".into())));
+        assert_eq!(ids(t.restore_all_order("editor")), ["1"]);
+        assert!(t.restore_all_order("nothing").is_empty());
+    }
+
+    #[test]
+    fn backend_timestamps_order_stacks() {
+        let mut t = WindowTracker::new();
+        let mut a = w("a", "app", true);
+        a.minimized_at = Some(200);
+        let mut b = w("b", "app", true);
+        b.minimized_at = Some(100);
+        // Seen in one snapshot: observation order says a, b; timestamps say b, a.
+        t.apply(&WindowEvent::Snapshot(vec![a, b]));
+        let order: Vec<_> = t
+            .restore_all_order("app")
+            .into_iter()
+            .map(|i| i.0)
+            .collect();
+        assert_eq!(order, ["b", "a"]);
+        assert_eq!(
+            t.groups()[0].windows[0].id.0,
+            "a",
+            "newest first in the sidebar"
+        );
     }
 
     #[test]

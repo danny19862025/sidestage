@@ -307,6 +307,7 @@ impl Watcher {
             title,
             minimized,
             icon_hint: app.icon,
+            minimized_at: None,
         })
     }
 

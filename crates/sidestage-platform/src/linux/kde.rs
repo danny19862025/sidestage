@@ -300,6 +300,7 @@ impl State {
             },
             minimized,
             icon_hint: app.icon,
+            minimized_at: None,
         };
         self.sent.insert(uuid.to_string());
         let _ = self.tx.send(WindowEvent::Upsert(info));

@@ -60,6 +60,13 @@ pub trait WindowBackend: Send {
     fn restore(&self, id: &WindowId);
     /// Asks for a fresh still preview (Snapshot mode only). Best effort.
     fn refresh_thumbnail(&self, _id: &WindowId) {}
+    /// Restores several windows; the last one ends up focused. Ids of
+    /// windows that have closed meanwhile are ignored.
+    fn restore_many(&self, ids: &[WindowId]) {
+        for id in ids {
+            self.restore(id);
+        }
+    }
 }
 
 /// Picks and starts the best backend for the current session.

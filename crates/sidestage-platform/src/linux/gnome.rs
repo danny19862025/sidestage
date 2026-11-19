@@ -33,6 +33,8 @@ struct ExtWindow {
     minimized: bool,
     #[serde(default)]
     icon: String,
+    #[serde(default)]
+    minimized_at: Option<u64>,
 }
 
 pub struct GnomeBackend {
@@ -189,6 +191,7 @@ fn follow(
                 },
                 minimized: w.minimized,
                 icon_hint: app.icon,
+                minimized_at: w.minimized_at,
             });
         }
         *minimized_before = now_min;

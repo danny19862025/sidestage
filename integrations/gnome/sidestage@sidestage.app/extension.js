@@ -53,6 +53,11 @@ const IFACE_XML = `
       <arg type="i" direction="in" name="x"/>
       <arg type="i" direction="in" name="y"/>
     </method>
+    <method name="DebugClick">
+      <arg type="i" direction="in" name="x"/>
+      <arg type="i" direction="in" name="y"/>
+      <arg type="u" direction="in" name="button"/>
+    </method>
     <method name="DebugGetenv">
       <arg type="s" direction="in" name="name"/>
       <arg type="s" direction="out" name="value"/>
@@ -93,6 +98,7 @@ export default class SidestageExtension extends Extension {
     enable() {
         this._windowSignals = new Map();
         this._snapshots = new Map();   // window id -> png path
+        this._minimizedAt = new Map(); // window -> monotonic µs
         this._strut = null;
         this._changeSource = 0;
 
@@ -153,6 +159,10 @@ export default class SidestageExtension extends Extension {
         const ids = [
             win.connect('notify::minimized', () => {
                 if (win.minimized)
+                    this._minimizedAt.set(win, GLib.get_monotonic_time());
+                else
+                    this._minimizedAt.delete(win);
+                if (win.minimized)
                     this._capture(win);
                 else
                     this._dropSnapshot(win);
@@ -164,6 +174,7 @@ export default class SidestageExtension extends Extension {
                 const sigs = this._windowSignals.get(win);
                 sigs?.forEach(id => win.disconnect(id));
                 this._windowSignals.delete(win);
+                this._minimizedAt.delete(win);
                 this._dropSnapshot(win);
                 this._changed();
             }),
@@ -238,6 +249,9 @@ export default class SidestageExtension extends Extension {
                 app_name: known ? app.get_name() : '',
                 title: win.get_title() ?? '',
                 minimized: win.minimized,
+                focused: win.has_focus(),
+                // Windows minimized before tracking started count as oldest.
+                minimized_at: win.minimized ? (this._minimizedAt.get(win) ?? 0) : null,
                 icon: app?.get_app_info()?.get_icon()?.to_string() ?? '',
             });
         }
@@ -343,6 +357,22 @@ export default class SidestageExtension extends Extension {
         const seat = global.stage.context.get_backend().get_default_seat();
         if (!this._virtualPointer)
             this._virtualPointer = seat.create_virtual_device(Clutter.InputDeviceType.POINTER_DEVICE);
-        this._virtualPointer.notify_absolute_motion(global.get_current_time() * 1000, x, y);
+        this._virtualPointer.notify_absolute_motion(GLib.get_monotonic_time(), x, y);
+    }
+
+    DebugClick(x, y, button) {
+        if (GLib.getenv('SIDESTAGE_DEBUG') !== '1')
+            return;
+        this.DebugMovePointer(x, y);
+        const b = button || Clutter.BUTTON_PRIMARY;
+        const now = () => GLib.get_monotonic_time();
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+            this._virtualPointer.notify_button(now(), b, Clutter.ButtonState.PRESSED);
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 60, () => {
+                this._virtualPointer.notify_button(now(), b, Clutter.ButtonState.RELEASED);
+                return GLib.SOURCE_REMOVE;
+            });
+            return GLib.SOURCE_REMOVE;
+        });
     }
 }
