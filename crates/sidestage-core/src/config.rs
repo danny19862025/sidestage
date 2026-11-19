@@ -229,6 +229,9 @@ pub struct Settings {
     pub reveal_delay_ms: u32,
     /// Global shortcut that opens search (empty = off), e.g. `Ctrl+Alt+Space`.
     pub search_shortcut: String,
+    /// Hide the sidebar (and its edge reveal and reserved space) while a
+    /// fullscreen app covers its monitor.
+    pub pause_in_fullscreen: bool,
 }
 
 impl Default for Settings {
@@ -247,6 +250,7 @@ impl Default for Settings {
             animations: true,
             reveal_delay_ms: 150,
             search_shortcut: "Ctrl+Alt+Space".into(),
+            pause_in_fullscreen: true,
         }
     }
 }

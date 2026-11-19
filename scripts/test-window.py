@@ -10,6 +10,8 @@ title = sys.argv[1] if len(sys.argv) > 1 else "Sidestage test window"
 minimize_after = float(sys.argv[2]) if len(sys.argv) > 2 else 2
 close_after = float(sys.argv[3]) if len(sys.argv) > 3 else 10
 maximize = len(sys.argv) > 4 and sys.argv[4] == "max"
+# "full:ON:OFF" enters fullscreen after ON seconds and leaves after OFF.
+full = sys.argv[4].split(":")[1:] if len(sys.argv) > 4 and sys.argv[4].startswith("full") else None
 
 w = Gtk.Window(title=title)
 w.set_default_size(640, 400)
@@ -25,6 +27,9 @@ w.show_all()
 if maximize:
     w.maximize()
     GLib.timeout_add(1500, lambda: (print("geometry", *w.get_position(), *w.get_size(), flush=True), False)[1])
+if full:
+    GLib.timeout_add(int(float(full[0]) * 1000), lambda: (w.fullscreen(), False)[1])
+    GLib.timeout_add(int(float(full[1]) * 1000), lambda: (w.unfullscreen(), False)[1])
 if minimize_after > 0:
     GLib.timeout_add(int(minimize_after * 1000), lambda: (w.iconify(), False)[1])
 GLib.timeout_add(int(close_after * 1000), lambda: (w.destroy(), False)[1])

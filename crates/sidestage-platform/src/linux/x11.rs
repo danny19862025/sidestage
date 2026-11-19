@@ -27,6 +27,7 @@ x11rb::atom_manager! {
         _NET_WM_STATE,
         _NET_WM_STATE_HIDDEN,
         _NET_WM_STATE_SKIP_TASKBAR,
+        _NET_WM_STATE_FULLSCREEN,
         _NET_WM_WINDOW_TYPE,
         _NET_WM_WINDOW_TYPE_NORMAL,
         _NET_WM_WINDOW_TYPE_DIALOG,
@@ -53,6 +54,9 @@ impl WindowBackend for X11Backend {
     }
     fn thumbnail_mode(&self) -> ThumbnailMode {
         ThumbnailMode::None
+    }
+    fn detects_fullscreen(&self) -> bool {
+        true
     }
     fn focus_previous(&self) {
         let prev = *self.last_active.lock().unwrap();
@@ -103,6 +107,8 @@ pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<X11Backend> {
                 resolver: AppResolver::new(tx.clone(), waker.clone()),
                 own_pid: std::process::id(),
                 last_active: last_active2,
+                current_active: None,
+                fullscreen: Vec::new(),
             };
             let _ = tx.send(WindowEvent::Status(BackendStatus {
                 backend: "X11 (EWMH)".into(),
@@ -132,10 +138,12 @@ struct Watcher {
     resolver: AppResolver,
     own_pid: u32,
     last_active: std::sync::Arc<Mutex<Option<u32>>>,
+    current_active: Option<u32>,
+    fullscreen: Vec<sidestage_core::FullscreenArea>,
 }
 
 impl Watcher {
-    fn note_active(&self) {
+    fn note_active(&mut self) {
         let win = self
             .conn
             .get_property(
@@ -159,6 +167,43 @@ impl Watcher {
             .and_then(|r| r.value32().and_then(|mut v| v.next()));
         if pid != Some(self.own_pid) {
             *self.last_active.lock().unwrap() = Some(win);
+            self.current_active = Some(win);
+            self.update_fullscreen();
+        }
+    }
+
+    /// The active (non-Sidestage) window, when fullscreen, covers its monitor.
+    fn update_fullscreen(&mut self) {
+        let area = self.current_active.and_then(|win| {
+            let states = self.atoms_of(win, self.atoms._NET_WM_STATE);
+            if !states.contains(&self.atoms._NET_WM_STATE_FULLSCREEN)
+                || states.contains(&self.atoms._NET_WM_STATE_HIDDEN)
+            {
+                return None;
+            }
+            let geo = self.conn.get_geometry(win).ok()?.reply().ok()?;
+            let tr = self
+                .conn
+                .translate_coordinates(win, self.root, 0, 0)
+                .ok()?
+                .reply()
+                .ok()?;
+            Some(sidestage_core::FullscreenArea {
+                output: None,
+                rect: Some([
+                    tr.dst_x as i32,
+                    tr.dst_y as i32,
+                    geo.width as i32,
+                    geo.height as i32,
+                ]),
+                logical: false,
+            })
+        });
+        let areas: Vec<_> = area.into_iter().collect();
+        if areas != self.fullscreen {
+            self.fullscreen = areas.clone();
+            let _ = self.tx.send(WindowEvent::Fullscreen(areas));
+            (self.waker)();
         }
     }
 
@@ -187,6 +232,9 @@ impl Watcher {
                 .contains(&p.atom)
                 {
                     self.refresh(p.window);
+                    if Some(p.window) == self.current_active && p.atom == self.atoms._NET_WM_STATE {
+                        self.update_fullscreen();
+                    }
                 }
             }
         }

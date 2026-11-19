@@ -19,15 +19,16 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, EnumWindows, GetAncestor, GetClassLongPtrW, GetMessageW, GetWindow,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
-    IsWindow, IsWindowVisible, SendMessageTimeoutW, SetForegroundWindow, SetTimer, ShowWindowAsync,
-    TranslateMessage, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-    EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
-    EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON, GCLP_HICONSM,
-    GWL_EXSTYLE, GW_OWNER, HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG,
-    SW_RESTORE, SW_SHOWNOACTIVATE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON,
-    WM_TIMER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    DispatchMessageW, EnumWindows, GetAncestor, GetClassLongPtrW, GetForegroundWindow, GetMessageW,
+    GetWindow, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindow, IsWindowVisible, SendMessageTimeoutW, SetForegroundWindow, SetTimer,
+    ShowWindowAsync, TranslateMessage, CHILDID_SELF, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY,
+    EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE,
+    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_SYSTEM_MINIMIZESTART, GA_ROOTOWNER, GCLP_HICON, GCLP_HICONSM, GWL_EXSTYLE, GW_OWNER,
+    HICON, ICON_BIG, ICON_SMALL2, MSG, OBJID_WINDOW, SMTO_ABORTIFHUNG, SW_RESTORE,
+    SW_SHOWNOACTIVATE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_GETICON, WM_TIMER,
+    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::icons;
@@ -77,6 +78,10 @@ impl WindowBackend for Win32Backend {
         }
     }
 
+    fn detects_fullscreen(&self) -> bool {
+        true
+    }
+
     fn focus_previous(&self) {
         let prev = LAST_FOREGROUND.load(std::sync::atomic::Ordering::Relaxed);
         if prev != 0 {
@@ -117,6 +122,7 @@ struct State {
     apps: HashMap<String, String>,
     iconed: std::collections::HashSet<String>,
     own_pid: u32,
+    fullscreen: Vec<sidestage_core::FullscreenArea>,
 }
 
 thread_local! {
@@ -131,6 +137,7 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
         apps: HashMap::new(),
         iconed: Default::default(),
         own_pid: unsafe { GetCurrentProcessId() },
+        fullscreen: Vec::new(),
     };
     STATE.with(|s| *s.borrow_mut() = Some(state));
     let _ = tx.send(WindowEvent::Status(BackendStatus {
@@ -146,6 +153,7 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
         (EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_NAMECHANGE),
         (EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED),
         (EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND),
+        (EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE),
     ];
     let hooks: Vec<HWINEVENTHOOK> = ranges
         .iter()
@@ -168,6 +176,11 @@ fn run(tx: Sender<WindowEvent>, waker: Waker) {
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             if msg.message == WM_TIMER {
                 resync();
+                STATE.with(|s| {
+                    if let Some(st) = s.borrow_mut().as_mut() {
+                        st.update_fullscreen();
+                    }
+                });
             }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
@@ -198,6 +211,14 @@ unsafe extern "system" fn on_event(
             // WINEVENT_SKIPOWNPROCESS: this is never the sidebar itself.
             EVENT_SYSTEM_FOREGROUND => {
                 LAST_FOREGROUND.store(key, std::sync::atomic::Ordering::Relaxed);
+                state.update_fullscreen();
+            }
+            // Only the foreground window's size matters (entering or
+            // leaving fullscreen); other moves are ignored.
+            EVENT_OBJECT_LOCATIONCHANGE => {
+                if GetForegroundWindow() == hwnd {
+                    state.update_fullscreen();
+                }
             }
             EVENT_OBJECT_DESTROY => {
                 if state.windows.remove(&key).is_some() {
@@ -244,6 +265,66 @@ fn resync() {
 }
 
 impl State {
+    /// The foreground window of another process counts as fullscreen when
+    /// it covers its whole monitor without a caption (maximized windows
+    /// keep their caption and stop at the taskbar).
+    fn update_fullscreen(&mut self) {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetClassNameW, GetWindowRect, GWL_STYLE, WS_CAPTION,
+        };
+        let area = unsafe {
+            let fg = GetForegroundWindow();
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(fg, Some(&mut pid));
+            if fg.0.is_null() || pid == self.own_pid {
+                return; // keep the previous answer while the sidebar is focused
+            }
+            let mut class = [0u16; 64];
+            let n = GetClassNameW(fg, &mut class) as usize;
+            let class = String::from_utf16_lossy(&class[..n]);
+            let shell = matches!(
+                class.as_str(),
+                "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
+            );
+            let mut r = RECT::default();
+            let mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            let style = GetWindowLongPtrW(fg, GWL_STYLE) as u32;
+            if shell
+                || GetWindowRect(fg, &mut r).is_err()
+                || !GetMonitorInfoW(mon, &mut mi).as_bool()
+                || style & WS_CAPTION.0 == WS_CAPTION.0
+                || IsIconic(fg).as_bool()
+            {
+                None
+            } else {
+                let m = mi.rcMonitor;
+                let covers = r.left <= m.left
+                    && r.top <= m.top
+                    && r.right >= m.right
+                    && r.bottom >= m.bottom;
+                covers.then_some(sidestage_core::FullscreenArea {
+                    output: None,
+                    rect: Some([m.left, m.top, m.right - m.left, m.bottom - m.top]),
+                    logical: false,
+                })
+            }
+        };
+        let areas: Vec<_> = area.into_iter().collect();
+        if areas != self.fullscreen {
+            self.fullscreen = areas.clone();
+            let _ = self.tx.send(WindowEvent::Fullscreen(areas));
+            (self.waker)();
+        }
+    }
+
     fn refresh(&mut self, hwnd: HWND) {
         let key = hwnd.0 as isize;
         match self.describe(hwnd) {

@@ -14,6 +14,9 @@
 //   SetShortcut(s accel) -> (b, s)   global shortcut for Sidestage search
 //   FocusPrevious()                  refocus the last non-Sidestage window
 //   signal Changed()                 window set or state changed
+//   FullscreenMonitors() -> s        JSON [[x,y,w,h], ...] of monitors that
+//                                    show a fullscreen window
+//   signal FullscreenChanged()
 //   signal ShortcutActivated()
 //   signal PointerInside(b)
 //
@@ -80,6 +83,8 @@ const IFACE_XML = `
       <arg type="s" direction="out" name="message"/>
     </method>
     <method name="FocusPrevious"/>
+    <method name="FullscreenMonitors"><arg type="s" direction="out" name="json"/></method>
+    <signal name="FullscreenChanged"/>
     <signal name="ShortcutActivated"/>
     <signal name="Changed"/>
     <signal name="PointerInside"><arg type="b" name="inside"/></signal>
@@ -131,6 +136,9 @@ export default class SidestageExtension extends Extension {
                 const w = global.display.focus_window;
                 if (w && !this._isSidestage(w))
                     this._lastFocus = w;
+            }),
+            global.display.connect('in-fullscreen-changed', () => {
+                this._dbus?.emit_signal('FullscreenChanged', null);
             }),
             global.display.connect('accelerator-activated', (_d, action) => {
                 if (!this._grab || action !== this._grab.action)
@@ -357,6 +365,17 @@ export default class SidestageExtension extends Extension {
         Main.wm.allowKeybinding(name, Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW);
         this._grab = {action, name};
         return [true, `${accel} via GNOME Shell`];
+    }
+
+    FullscreenMonitors() {
+        // Mutter tracks per monitor whether a fullscreen window is on top
+        // (taking workspaces and stacking into account).
+        const out = [];
+        for (const m of Main.layoutManager.monitors) {
+            if (global.display.get_monitor_in_fullscreen(m.index))
+                out.push([m.x, m.y, m.width, m.height]);
+        }
+        return JSON.stringify(out);
     }
 
     FocusPrevious() {

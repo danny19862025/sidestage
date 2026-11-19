@@ -16,7 +16,7 @@ OUT="$OUT"; ROOT="$ROOT"
 gsettings set org.gnome.shell enabled-extensions "['sidestage@sidestage.app']"
 gsettings set org.gnome.shell disable-user-extensions false
 gsettings set org.gnome.shell welcome-dialog-last-shown-version '999'
-SIDESTAGE_DEBUG=1 gnome-shell --headless --wayland --virtual-monitor 1440x900 --wayland-display sst-gnome > "\$OUT/gnome-shell.log" 2>&1 &
+SIDESTAGE_DEBUG=1 gnome-shell --headless --wayland --virtual-monitor 1440x900 \${SECOND_MONITOR:+--virtual-monitor 1440x900} --wayland-display sst-gnome > "\$OUT/gnome-shell.log" 2>&1 &
 SHELL_PID=\$!
 for i in \$(seq 60); do
   gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner org.sidestage.Shell 2>/dev/null | grep -q true && break
@@ -34,9 +34,11 @@ export SIDESTAGE_CONFIG="\$OUT/config.json" RUST_LOG=\${RUST_LOG:-info,usvg=erro
 "$BIN" > "\$OUT/sidestage.log" 2>&1 &
 APP=\$!
 sleep 3
+if [ -z "\${NO_TEST_WINDOWS:-}" ]; then
 python3 "$ROOT/scripts/test-window.py" "Quarterly report.odt" 1.5 90 >/dev/null 2>&1 &
 python3 "$ROOT/scripts/test-window.py" "Design notes" 2.0 90 >/dev/null 2>&1 &
 python3 "$ROOT/scripts/test-window.py" "Maximized window" 0 90 max >/dev/null 2>&1 &
+fi
 sleep 6
 call ListWindows > "\$OUT/windows.json"
 shot 1
@@ -48,5 +50,5 @@ chmod +x "$OUT/session.sh"
 env -u WAYLAND_DISPLAY -u DISPLAY -u DBUS_SESSION_BUS_ADDRESS \
   XDG_CONFIG_HOME="$OUT/home/config" XDG_DATA_HOME="$OUT/home/data" XDG_CACHE_HOME="$OUT/home/cache" \
   XDG_RUNTIME_DIR="$OUT/r" XDG_CURRENT_DESKTOP=GNOME \
-  timeout 120 dbus-run-session -- "$OUT/session.sh" > "$OUT/session.log" 2>&1 || true
+  NO_TEST_WINDOWS="${NO_TEST_WINDOWS:-}" SECOND_MONITOR="${SECOND_MONITOR:-}" timeout 120 dbus-run-session -- "$OUT/session.sh" > "$OUT/session.log" 2>&1 || true
 ls "$OUT"

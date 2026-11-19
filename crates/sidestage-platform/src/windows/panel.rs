@@ -25,10 +25,10 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, GetWindowPlacement, IsIconic, PostMessageW, RegisterWindowMessageW,
-    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_BROADCAST,
-    HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_USER, WS_EX_APPWINDOW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_BROADCAST,
+    HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE,
+    SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WM_MOUSEACTIVATE, WM_USER, WS_EX_APPWINDOW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
 use crate::panel::{Edge, LiveThumbnails, MonitorInfo, PanelGeometry};
@@ -148,6 +148,7 @@ pub struct Panel {
     hwnd: HWND,
     last: Option<PanelGeometry>,
     appbar: bool,
+    hidden: bool,
     thumbs: DwmThumbs,
 }
 
@@ -185,6 +186,7 @@ impl Panel {
             hwnd,
             last: None,
             appbar: false,
+            hidden: false,
             thumbs: DwmThumbs {
                 dest: hwnd,
                 map: HashMap::new(),
@@ -209,6 +211,24 @@ impl Panel {
         }
         self.last = Some(g.clone());
         let (mut x, y, mut w, h) = (g.x, g.y, g.width, g.height);
+        if g.paused {
+            // Fullscreen app on this monitor: drop the AppBar and hide.
+            unsafe {
+                if self.appbar {
+                    let mut abd = self.appbar_data();
+                    SHAppBarMessage(ABM_REMOVE, &mut abd);
+                    self.appbar = false;
+                }
+                let _ = ShowWindow(self.hwnd, SW_HIDE);
+            }
+            self.hidden = true;
+            return;
+        }
+        if std::mem::take(&mut self.hidden) {
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+            }
+        }
         if let Some(strip) = g.collapsed_strip {
             // Auto-hidden: shrink to a strip at the screen edge.
             if g.edge == Edge::Right {

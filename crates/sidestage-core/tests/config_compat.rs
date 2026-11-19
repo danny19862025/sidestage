@@ -34,6 +34,9 @@ fn v0_1_config_loads_with_every_field_preserved() {
     assert!(s.auto_hide && s.reserve_space && s.launch_at_login && s.show_labels && s.animations);
     assert_eq!(s.theme, Theme::System);
     assert_eq!(s.reveal_delay_ms, 375);
+    // Settings added later get their defaults.
+    assert!(s.pause_in_fullscreen);
+    assert_eq!(s.search_shortcut, "Ctrl+Alt+Space");
 
     assert_eq!(c.sections.len(), 2);
     assert_eq!(c.sections[0].id, "sec-18a2b7c9d0e1f20");

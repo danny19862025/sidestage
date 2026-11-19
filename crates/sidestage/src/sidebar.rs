@@ -102,6 +102,17 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     let settings = app.config.settings.clone();
     let left = settings.edge == Edge::Left;
 
+    if app.paused {
+        // Fullscreen app on this monitor: draw nothing at all.
+        if let Some(p) = app.panel.as_mut() {
+            p.set_blur_region(None);
+            if let Some(lt) = p.live_thumbnails() {
+                lt.begin();
+                lt.end();
+            }
+        }
+        return;
+    }
     if settings.auto_hide && reveal < 0.002 {
         // Collapsed: a faint handle the pointer can find. On Windows the
         // window itself is only the strip; on Linux only its input shape is.

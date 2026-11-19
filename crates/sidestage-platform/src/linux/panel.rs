@@ -387,6 +387,18 @@ impl Panel {
         // Auto-hidden: keep the window size (resizing an XWayland dock under
         // the pointer confuses pointer focus) and narrow the input shape.
         match g.collapsed_strip {
+            _ if g.paused => {
+                // No input at all while a fullscreen app owns the monitor.
+                self.conn.shape_rectangles(
+                    shape::SO::SET,
+                    shape::SK::INPUT,
+                    x11rb::protocol::xproto::ClipOrdering::UNSORTED,
+                    self.window,
+                    0,
+                    0,
+                    &[],
+                )?;
+            }
             Some(strip) => {
                 let x = if g.edge == Edge::Left {
                     0

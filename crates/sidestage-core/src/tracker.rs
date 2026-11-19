@@ -52,6 +52,42 @@ pub enum WindowEvent {
     },
     /// Backend availability / diagnostics, shown in the sidebar footer.
     Status(BackendStatus),
+    /// Screen areas currently covered by a fullscreen app (empty = none).
+    Fullscreen(Vec<FullscreenArea>),
+}
+
+/// Where a fullscreen app is, as the backend knows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FullscreenArea {
+    /// Output/connector name, when known (matched first).
+    pub output: Option<String>,
+    /// `[x, y, w, h]` of the fullscreen window or its monitor.
+    pub rect: Option<[i32; 4]>,
+    /// `rect` is in compositor logical pixels (Wayland) rather than the
+    /// physical pixels used for monitors.
+    pub logical: bool,
+}
+
+impl FullscreenArea {
+    /// Whether this area is on the monitor at `monitor` (`[x, y, w, h]`,
+    /// physical pixels) named `name` with display `scale`.
+    pub fn covers(&self, name: &str, monitor: [i32; 4], scale: f32) -> bool {
+        if let Some(o) = &self.output {
+            return o == name;
+        }
+        let Some([x, y, w, h]) = self.rect else {
+            return false;
+        };
+        let k = if self.logical && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
+        let cx = ((x as f32 + w as f32 / 2.0) * k) as i32;
+        let cy = ((y as f32 + h as f32 / 2.0) * k) as i32;
+        let [mx, my, mw, mh] = monitor;
+        cx >= mx && cx < mx + mw && cy >= my && cy < my + mh
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -321,6 +357,40 @@ mod tests {
             "a",
             "newest first in the sidebar"
         );
+    }
+
+    #[test]
+    fn fullscreen_area_matching() {
+        let left = [0, 0, 1920, 1080];
+        let right = [1920, 0, 2560, 1440];
+        let named = FullscreenArea {
+            output: Some("DP-1".into()),
+            rect: None,
+            logical: false,
+        };
+        assert!(named.covers("DP-1", right, 1.0));
+        assert!(!named.covers("eDP-1", left, 1.0));
+        // Physical rect on the right monitor.
+        let r = FullscreenArea {
+            output: None,
+            rect: Some([1920, 0, 2560, 1440]),
+            logical: false,
+        };
+        assert!(r.covers("x", right, 1.0) && !r.covers("y", left, 1.0));
+        // Logical rect at 2x: (960..2240) logical = right monitor physically.
+        let l = FullscreenArea {
+            output: None,
+            rect: Some([960, 0, 1280, 720]),
+            logical: true,
+        };
+        assert!(l.covers("x", right, 2.0));
+        assert!(!l.covers("x", left, 2.0));
+        assert!(!FullscreenArea {
+            output: None,
+            rect: None,
+            logical: false
+        }
+        .covers("x", left, 1.0));
     }
 
     #[test]

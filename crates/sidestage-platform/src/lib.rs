@@ -61,6 +61,10 @@ pub trait WindowBackend: Send {
     fn restore(&self, id: &WindowId);
     /// Asks for a fresh still preview (Snapshot mode only). Best effort.
     fn refresh_thumbnail(&self, _id: &WindowId) {}
+    /// Whether this backend reports [`WindowEvent::Fullscreen`].
+    fn detects_fullscreen(&self) -> bool {
+        false
+    }
     /// Gives keyboard focus back to the window that had it before the
     /// sidebar took focus (search dismissed with Escape). Best effort.
     fn focus_previous(&self) {}

@@ -14,7 +14,9 @@ pub mod tracker;
 
 pub use config::{Config, Favourite, IconSource, LaunchTarget, Section, Settings};
 pub use image::RgbaImage;
-pub use tracker::{BackendStatus, WindowEvent, WindowGroup, WindowId, WindowInfo, WindowTracker};
+pub use tracker::{
+    BackendStatus, FullscreenArea, WindowEvent, WindowGroup, WindowId, WindowInfo, WindowTracker,
+};
 
 /// Short product name used for config directories, D-Bus names and UI.
 pub const APP_NAME: &str = "Sidestage";

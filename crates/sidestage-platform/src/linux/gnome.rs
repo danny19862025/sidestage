@@ -64,6 +64,9 @@ impl WindowBackend for GnomeBackend {
             log::warn!("GNOME extension Activate failed: {e}");
         }
     }
+    fn detects_fullscreen(&self) -> bool {
+        true
+    }
     fn focus_previous(&self) {
         if let Err(e) = self
             .proxy()
@@ -108,6 +111,17 @@ fn request_thumbnail(
 
 pub fn start(tx: Sender<WindowEvent>, waker: Waker) -> Result<GnomeBackend> {
     let conn = zbus::blocking::Connection::session().context("session bus")?;
+    {
+        let (conn, tx, waker) = (conn.clone(), tx.clone(), waker.clone());
+        std::thread::Builder::new()
+            .name("gnome-fullscreen".into())
+            .spawn(move || loop {
+                if let Err(e) = follow_fullscreen(&conn, &tx, &waker) {
+                    log::debug!("GNOME fullscreen stream: {e:#}");
+                }
+                std::thread::sleep(Duration::from_secs(3));
+            })?;
+    }
     let backend = GnomeBackend {
         conn: conn.clone(),
         tx: tx.clone(),
@@ -231,4 +245,34 @@ pub fn set_reserved_space(monitor: &str, edge: sidestage_core::config::Edge, siz
             log::debug!("GNOME extension SetReservedSpace: {e}");
         }
     });
+}
+
+/// Reports monitors that show a fullscreen window, on every change.
+fn follow_fullscreen(
+    conn: &zbus::blocking::Connection,
+    tx: &Sender<WindowEvent>,
+    waker: &Waker,
+) -> Result<()> {
+    let proxy = zbus::blocking::Proxy::new(conn, BUS_NAME, PATH, IFACE)?;
+    let signals = proxy.receive_signal("FullscreenChanged")?;
+    let send = || -> Result<()> {
+        let json: String = proxy.call("FullscreenMonitors", &())?;
+        let rects: Vec<[i32; 4]> = serde_json::from_str(&json)?;
+        let areas = rects
+            .into_iter()
+            .map(|r| sidestage_core::FullscreenArea {
+                output: None,
+                rect: Some(r),
+                logical: true,
+            })
+            .collect();
+        let _ = tx.send(WindowEvent::Fullscreen(areas));
+        waker();
+        Ok(())
+    };
+    send()?;
+    for _ in signals {
+        send()?;
+    }
+    anyhow::bail!("signal stream closed")
 }

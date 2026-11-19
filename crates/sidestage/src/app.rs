@@ -101,6 +101,10 @@ pub struct SidestageApp {
     pub toast: Option<Toast>,
     pub section_rects: Vec<(String, egui::Rect)>,
     pub menu_open: bool,
+    /// Areas covered by fullscreen apps, from the backend.
+    fullscreen: Vec<sidestage_core::FullscreenArea>,
+    /// The sidebar is suspended for a fullscreen app.
+    pub paused: bool,
     /// "Launch section" batches: running, or finished (cool-down so a
     /// double-click can't start the same batch twice).
     section_launch: HashMap<String, BatchState>,
@@ -216,6 +220,8 @@ impl SidestageApp {
             toast: None,
             section_rects: Vec::new(),
             menu_open: false,
+            fullscreen: Vec::new(),
+            paused: false,
             section_launch: HashMap::new(),
             batch_tx,
             batch_rx,
@@ -443,6 +449,10 @@ impl SidestageApp {
                 WindowEvent::Thumbnail { id, image } => {
                     self.textures.set_thumbnail(ctx, id, image.as_ref())
                 }
+                WindowEvent::Fullscreen(areas) => {
+                    log::debug!("fullscreen areas: {areas:?}");
+                    self.fullscreen = areas.clone();
+                }
                 WindowEvent::Status(s) => {
                     log::info!("backend status: {s:?}");
                     self.status = Some(s.clone());
@@ -541,6 +551,9 @@ impl SidestageApp {
     }
 
     fn update_autohide(&mut self, ctx: &egui::Context) {
+        if self.paused {
+            return;
+        }
         let s = &self.config.settings;
         if !s.auto_hide {
             self.autohide = AutoHide {
@@ -654,7 +667,9 @@ impl SidestageApp {
             Edge::Right => mon.x + mon.width - w,
         };
         // Reserve only the body; the arch's swell floats over windows.
-        let reserve = if s.auto_hide || !s.reserve_space {
+        let paused = self.update_paused(&mon);
+        let s = &self.config.settings;
+        let reserve = if paused || s.auto_hide || !s.reserve_space {
             0
         } else {
             ((s.width + 4.0) * self.scale).round() as i32
@@ -668,7 +683,8 @@ impl SidestageApp {
             height: wh,
             reserve,
             collapsed_strip,
-            auto_hide: s.auto_hide,
+            auto_hide: s.auto_hide && !paused,
+            paused,
         };
         if let Some(p) = self.panel.as_mut() {
             if self.last_geometry.as_ref() != Some(&geometry) {
@@ -677,6 +693,34 @@ impl SidestageApp {
             }
             p.apply(&geometry);
         }
+    }
+
+    /// Whether a fullscreen app covers the sidebar's monitor (and the user
+    /// wants pausing). Leaving the pause resets auto-hide to hidden so the
+    /// earlier behaviour resumes.
+    fn update_paused(&mut self, mon: &MonitorInfo) -> bool {
+        let want = self.config.settings.pause_in_fullscreen && self.backend.detects_fullscreen();
+        let scale = if mon.scale > 0.0 { mon.scale } else { 1.0 };
+        let now = want
+            && self
+                .fullscreen
+                .iter()
+                .any(|a| a.covers(&mon.name, [mon.x, mon.y, mon.width, mon.height], scale));
+        if now != self.paused {
+            log::info!(
+                "{} for fullscreen on {}",
+                if now { "pausing" } else { "resuming" },
+                mon.name
+            );
+            self.paused = now;
+            self.autohide = AutoHide::default();
+            if now {
+                // Close transient UI that would otherwise linger.
+                self.search_open = false;
+                self.keyboard_wanted = false;
+            }
+        }
+        now
     }
 
     fn sync_keyboard(&mut self) {

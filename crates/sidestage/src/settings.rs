@@ -270,6 +270,8 @@ fn behaviour(app: &mut SidestageApp, ui: &mut Ui) {
     let mut s: Settings = app.config.settings.clone();
     let before = s.clone();
     let monitors = app.monitors.clone();
+    let detects_fullscreen = app.backend.detects_fullscreen();
+    let paused_now = app.paused;
     group(ui, app, |ui| {
         row(ui, "Screen edge", "", |ui| {
             segmented(
@@ -344,6 +346,18 @@ fn behaviour(app: &mut SidestageApp, ui: &mut Ui) {
                     ui.checkbox(&mut s.reserve_space, "");
                 },
             );
+        });
+        let hint = if !detects_fullscreen {
+            "This desktop doesn't tell Sidestage about fullscreen apps (on GNOME, enable the extension)."
+        } else if paused_now {
+            "Paused now: a fullscreen app covers the sidebar's display."
+        } else {
+            "Hide the sidebar, its edge reveal and reserved space while a fullscreen app covers its display."
+        };
+        ui.add_enabled_ui(detects_fullscreen, |ui| {
+            row(ui, "Pause in fullscreen", hint, |ui| {
+                ui.checkbox(&mut s.pause_in_fullscreen, "");
+            });
         });
     });
     group(ui, app, |ui| {

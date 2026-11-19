@@ -42,6 +42,9 @@ pub struct PanelGeometry {
     pub collapsed_strip: Option<i32>,
     /// Auto-hide is enabled (the platform may need to watch the pointer).
     pub auto_hide: bool,
+    /// A fullscreen app covers this monitor: no drawing, input, reserved
+    /// space or edge reveal until it ends.
+    pub paused: bool,
 }
 
 /// Draws live previews into rectangles of the sidebar (Windows DWM).
