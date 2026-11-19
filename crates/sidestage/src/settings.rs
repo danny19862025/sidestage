@@ -44,6 +44,22 @@ pub struct SettingsUi {
     opened_at: Option<std::time::Instant>,
 }
 
+/// Opens at about 60 % of the sidebar's display (logical px), within
+/// sensible limits.
+fn settings_size(app: &SidestageApp) -> [f32; 2] {
+    let (w, h) = app
+        .target_monitor()
+        .map(|m| {
+            let s = if m.scale > 0.0 { m.scale } else { 1.0 };
+            (m.width as f32 / s, m.height as f32 / s)
+        })
+        .unwrap_or((1600.0, 1000.0));
+    [
+        (w * 0.6).clamp(900.0, 1280.0),
+        (h * 0.66).clamp(640.0, 860.0),
+    ]
+}
+
 pub fn viewport_id() -> ViewportId {
     ViewportId::from_hash_of("sidestage-settings")
 }
@@ -54,8 +70,8 @@ pub fn show(app: &mut SidestageApp, ctx: &egui::Context) {
         .with_title("Sidestage Settings")
         .with_transparent(false)
         .with_app_id("sidestage-settings")
-        .with_inner_size([780.0, 580.0])
-        .with_min_inner_size([640.0, 460.0])
+        .with_inner_size(settings_size(app))
+        .with_min_inner_size([760.0, 520.0])
         .with_icon(egui::IconData {
             rgba: icon.pixels,
             width: icon.width,
@@ -733,17 +749,6 @@ fn section_items(app: &mut SidestageApp, ui: &mut Ui, selected: &str) {
                     ui.add_space(34.0);
                 }
             }
-            ui.allocate_ui_with_layout(
-                vec2((ui.available_width() - 260.0).max(80.0), 36.0),
-                Layout::top_down(Align::Min),
-                |ui| {
-                    ui.add(egui::Label::new(&fav.name).truncate());
-                    ui.add(
-                        egui::Label::new(RichText::new(target_text(&fav.target)).small().weak())
-                            .truncate(),
-                    );
-                },
-            );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.small_button("Remove").clicked() {
                     app.config.remove_favourite(&fav.id);
@@ -770,6 +775,24 @@ fn section_items(app: &mut SidestageApp, ui: &mut Ui, selected: &str) {
                 if ui.small_button("Open").clicked() {
                     app.launch(&fav.id);
                 }
+                ui.add_space(8.0);
+                // The text gets only the space the buttons leave, so long
+                // names and paths are shortened instead of overlapping.
+                let detail = if fav.include_in_launch {
+                    target_text(&fav.target)
+                } else {
+                    format!("{} · not in section launch", target_text(&fav.target))
+                };
+                ui.allocate_ui_with_layout(
+                    vec2(ui.available_width(), 36.0),
+                    Layout::top_down(Align::Min),
+                    |ui| {
+                        ui.add(egui::Label::new(&fav.name).truncate())
+                            .on_hover_text(&fav.name);
+                        ui.add(egui::Label::new(RichText::new(&detail).small().weak()).truncate())
+                            .on_hover_text(&detail);
+                    },
+                );
             });
         });
         ui.separator();

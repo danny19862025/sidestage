@@ -163,7 +163,9 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     let arch = Arch::new(full, left, slide, swell);
     arch.paint(&painter, &palette);
     let card = arch.body;
-    let blur = (reveal >= 0.999).then(|| arch.blur_bands(full, ui.ctx().pixels_per_point()));
+    // Follow the shape on every frame (also while it slides and swells) so
+    // the frost never lags behind or pops in after the animation.
+    let blur = (reveal > 0.01).then(|| arch.blur_bands(full, ui.ctx().pixels_per_point()));
     if let Some(p) = app.panel.as_mut() {
         p.set_blur_region(blur);
     }
@@ -1758,36 +1760,57 @@ impl Arch {
 
     /// Horizontal bands approximating the shape, in physical window pixels,
     /// for the compositor's blur-behind region.
-    fn blur_bands(&self, full: Rect, ppp: f32) -> Vec<[i32; 4]> {
-        let ys = (self.body.top() as i32..self.body.bottom() as i32).step_by(6);
-        let mut out = Vec::new();
-        for y in ys {
-            let (y0, y1) = (y as f32, (y + 6) as f32);
-            // Narrowest extent of the shape within this band.
-            let mut reach = f32::MAX;
-            for w in self.points.windows(2) {
-                let (a, b) = (w[0], w[1]);
-                if (a.y.max(b.y) >= y0) && (a.y.min(b.y) <= y1) {
-                    let x = if self.left {
-                        a.x.min(b.x) - full.left()
-                    } else {
-                        full.right() - a.x.max(b.x)
-                    };
-                    if x > 1.0 {
-                        reach = reach.min(x);
-                    }
-                }
-            }
-            if reach == f32::MAX {
+    /// Distance from the screen edge to the arch's inner edge at height
+    /// `y` (logical px), or `None` above/below the shape.
+    fn reach_at(&self, full: Rect, y: f32) -> Option<f32> {
+        let mut best: Option<f32> = None;
+        for w in self.points.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if (a.y - b.y).abs() < f32::EPSILON || y < a.y.min(b.y) || y > a.y.max(b.y) {
                 continue;
             }
-            let x = if self.left { 0.0 } else { full.width() - reach };
-            out.push([
-                (x * ppp) as i32,
-                ((y0 - full.top()) * ppp) as i32,
-                (reach * ppp).ceil() as i32,
-                (6.0 * ppp).ceil() as i32,
-            ]);
+            let t = (y - a.y) / (b.y - a.y);
+            let x = a.x + (b.x - a.x) * t;
+            let reach = if self.left {
+                x - full.left()
+            } else {
+                full.right() - x
+            };
+            best = Some(best.map_or(reach, |r: f32| r.max(reach)));
+        }
+        best.filter(|r| *r > 0.5)
+    }
+
+    /// Rectangles (physical window pixels) that follow the arch outline
+    /// closely, for KWin's blur-behind region: 2 px bands measured at the
+    /// exact curve, merged where consecutive bands have the same width.
+    fn blur_bands(&self, full: Rect, ppp: f32) -> Vec<[i32; 4]> {
+        const STEP: i32 = 2;
+        let top = ((self.body.top() - full.top()) * ppp).floor() as i32;
+        let bottom = ((self.body.bottom() - full.top()) * ppp).ceil() as i32;
+        let width_px = (full.width() * ppp).round() as i32;
+        let mut out: Vec<[i32; 4]> = Vec::new();
+        let mut py = top.max(0);
+        while py < bottom {
+            // Narrower of the band's top and bottom, rounded down, so the
+            // frost never spills past the drawn outline.
+            let y0 = full.top() + py as f32 / ppp;
+            let y1 = full.top() + (py + STEP) as f32 / ppp;
+            let reach = match (self.reach_at(full, y0), self.reach_at(full, y1)) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            if let Some(reach) = reach {
+                let w = ((reach * ppp).floor() as i32).clamp(1, width_px);
+                let x = if self.left { 0 } else { width_px - w };
+                match out.last_mut() {
+                    Some(last) if last[0] == x && last[2] == w && last[1] + last[3] == py => {
+                        last[3] += STEP
+                    }
+                    _ => out.push([x, py, w, STEP]),
+                }
+            }
+            py += STEP;
         }
         out
     }

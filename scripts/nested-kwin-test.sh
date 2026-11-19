@@ -32,7 +32,7 @@ sleep 3
 if [ -z "\${NO_TEST_WINDOWS:-}" ]; then
 python3 "$ROOT/scripts/test-window.py" "Quarterly report.odt" 1.5 90 >/dev/null 2>&1 &
 python3 "$ROOT/scripts/test-window.py" "Design notes" 2.0 90 >/dev/null 2>&1 &
-python3 "$ROOT/scripts/test-window.py" "Maximized window" 0 90 max >/dev/null 2>&1 &
+TEST_STRIPES="\${TEST_STRIPES:-}" python3 "$ROOT/scripts/test-window.py" "Maximized window" 0 90 max >/dev/null 2>&1 &
 fi
 sleep 5
 shot 1
@@ -45,6 +45,6 @@ export -n WAYLAND_DISPLAY DISPLAY
 # Isolate KDE config (kglobalshortcutsrc, kwinrc, ...) from the real session.
 mkdir -p "$OUT/xdg-config"
 export XDG_CONFIG_HOME="$OUT/xdg-config"
-QT_FORCE_STDERR_LOGGING=1 QT_LOGGING_RULES="kwin_scripting.debug=true" NO_TEST_WINDOWS="${NO_TEST_WINDOWS:-}" timeout 150 dbus-run-session -- kwin_wayland --virtual --xwayland --output-count ${OUTPUTS:-1} --width 1440 --height 900 \
+QT_FORCE_STDERR_LOGGING=1 QT_LOGGING_RULES="kwin_scripting.debug=true" TEST_STRIPES="${TEST_STRIPES:-}" NO_TEST_WINDOWS="${NO_TEST_WINDOWS:-}" timeout 150 dbus-run-session -- kwin_wayland --virtual --xwayland --output-count ${OUTPUTS:-1} --width 1440 --height 900 \
   --socket sidestage-test-wl --exit-with-session "$OUT/session.sh" > "$OUT/kwin.log" 2>&1 || true
 ls "$OUT"

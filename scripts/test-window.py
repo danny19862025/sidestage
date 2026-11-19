@@ -17,7 +17,12 @@ w = Gtk.Window(title=title)
 w.set_default_size(640, 400)
 box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 css = Gtk.CssProvider()
-css.load_from_data(b"window { background: linear-gradient(135deg, #ff7a59, #6a5cff); } label { font-size: 40px; color: white; }")
+import os
+if os.environ.get("TEST_STRIPES"):
+    # High-detail backdrop to make blur (and gaps in it) measurable.
+    css.load_from_data(b"window { background: repeating-linear-gradient(90deg, #000 0px, #000 3px, #fff 3px, #fff 6px); } label { font-size: 40px; color: red; }")
+else:
+    css.load_from_data(b"window { background: linear-gradient(135deg, #ff7a59, #6a5cff); } label { font-size: 40px; color: white; }")
 Gtk.StyleContext.add_provider_for_screen(w.get_screen(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 box.pack_start(Gtk.Label(label=title), True, True, 0)
 w.add(box)
