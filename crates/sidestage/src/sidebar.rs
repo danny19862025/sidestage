@@ -69,6 +69,11 @@ struct Frame<'a> {
     opening: bool,
 }
 
+/// Physical pixel rows at the top of the window left out of its Windows
+/// shape. DWM paints a 1px light line along the top of the transparent
+/// window, which showed as a ghost line while the sidebar slid in and out.
+const SKIP_TOP: i32 = 1;
+
 fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(3)
 }
@@ -116,20 +121,9 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         return;
     }
     if settings.auto_hide && reveal < 0.002 {
-        // Collapsed: a faint handle the pointer can find. On Windows the
-        // window itself is only the strip; on Linux only its input shape is.
-        let x = if left {
-            full.left() + 1.5
-        } else {
-            full.right() - 1.5
-        };
-        let mid = full.center().y;
-        // Just a short grip in the middle; the whole edge still reveals.
-        // (A full-height hint read as a stray line down the screen edge.)
-        ui.painter().line_segment(
-            [pos2(x, mid - 70.0), pos2(x, mid + 70.0)],
-            Stroke::new(3.0, palette.accent.gamma_multiply(0.9)),
-        );
+        // Collapsed: nothing is drawn (any hint read as a stray line down
+        // the screen edge), but an invisible strip at the edge still takes
+        // the pointer and reveals the sidebar.
         // Windows keeps the full-size window and clips it to the strip
         // (resizing it on every reveal flashes); Linux ignores the shape.
         let ppp = ui.ctx().pixels_per_point();
@@ -139,7 +133,8 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         let sx = if left { 0 } else { width_px - strip };
         if let Some(p) = app.panel.as_mut() {
             p.set_blur_region(None);
-            p.set_shape(Some(vec![[sx, 0, strip, height_px]]));
+            // Skip the top pixel row (see `SKIP_TOP`).
+            p.set_shape(Some(vec![[sx, SKIP_TOP, strip, height_px - SKIP_TOP]]));
         }
         if let Some(lt) = app.panel.as_mut().and_then(|p| p.live_thumbnails()) {
             lt.begin();
@@ -176,21 +171,26 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     // Clip the window to the arch (plus its rim and shadow) so the
     // transparent corners pass clicks through. While a menu is open it may
     // reach past the arch, so the whole window stays live. While sliding,
-    // leave it unclipped: a region change per frame lands out of step with
-    // the GL frame and flashes.
+    // use one fixed full-window shape: a region change per frame lands out
+    // of step with the GL frame and flashes.
     let settled = reveal >= 0.999;
-    let shape = (settled && !app.menu_open).then(|| {
+    let width_px = (full.width() * ppp).round() as i32;
+    let height_px = (full.height() * ppp).round() as i32;
+    let shape = if settled && !app.menu_open {
         let grow = (4.0 * ppp).ceil() as i32;
-        let width_px = (full.width() * ppp).round() as i32;
         bands
             .iter()
             .map(|&[x, y, w, h]| {
                 let w2 = (w + grow).min(width_px);
                 let x2 = if left { x } else { width_px - w2 };
-                [x2, y, w2, h]
+                let y2 = y.max(SKIP_TOP);
+                [x2, y2, w2, h - (y2 - y)]
             })
             .collect::<Vec<_>>()
-    });
+    } else {
+        vec![[0, SKIP_TOP, width_px, height_px - SKIP_TOP]]
+    };
+    let shape = Some(shape);
     let blur = (reveal > 0.01).then_some(bands);
     if let Some(p) = app.panel.as_mut() {
         p.set_blur_region(blur);
