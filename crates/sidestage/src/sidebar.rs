@@ -1430,8 +1430,8 @@ fn toast(app: &SidestageApp, painter: &egui::Painter, card: Rect) {
 // edge that bows gently toward the middle of the screen.
 
 /// How far the inner edge bulges at mid-height (logical px).
-const ARCH_BULGE: f32 = 24.0;
-const ARCH_RADIUS: f32 = 44.0;
+const ARCH_BULGE: f32 = 54.0;
+const ARCH_RADIUS: f32 = 26.0;
 
 struct Arch {
     /// Bounding box of the straight part; content lives here.
@@ -1444,7 +1444,7 @@ impl Arch {
     fn new(full: Rect, left: bool, slide: f32) -> Arch {
         let top = full.top() + 6.0;
         let bottom = full.bottom() - 6.0;
-        let inner = full.width() - OUTER_MARGIN + 2.0; // straight inner edge, from the screen edge
+        let inner = full.width() - OUTER_MARGIN + 4.0; // straight inner edge, from the screen edge
         let r = ARCH_RADIUS.min((bottom - top) / 4.0);
         // Build for the left edge, in window-local x (0 = screen edge).
         let mut pts: Vec<(f32, f32)> = vec![(0.0, top)];

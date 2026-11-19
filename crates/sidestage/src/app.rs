@@ -24,7 +24,7 @@ use crate::tray::{Tray, TrayCommand};
 pub const HIDDEN_STRIP: f32 = 6.0;
 /// Extra window width beyond the sidebar body, used by the arch's curved
 /// inner edge (logical px).
-pub const OUTER_MARGIN: f32 = 30.0;
+pub const OUTER_MARGIN: f32 = 62.0;
 
 #[derive(Default)]
 pub struct AutoHide {
@@ -457,10 +457,11 @@ impl SidestageApp {
             Edge::Left => mon.x,
             Edge::Right => mon.x + mon.width - w,
         };
+        // Reserve only the body; the arch's swell floats over windows.
         let reserve = if s.auto_hide || !s.reserve_space {
             0
         } else {
-            full_w
+            ((s.width + 4.0) * self.scale).round() as i32
         };
         let geometry = PanelGeometry {
             monitor: mon,

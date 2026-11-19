@@ -486,7 +486,36 @@ impl Panel {
             }
             _ => self.conn.delete_property(self.window, atom).map(|_| ()),
         };
-        let _ = r.and_then(|_| self.conn.flush());
+        let _ = r;
+        // The same region is the input shape while revealed, so clicks
+        // outside the curved outline reach the windows underneath.
+        if self.last.as_ref().map(|g| g.collapsed_strip.is_none()).unwrap_or(true) {
+            let shaped = match &rects {
+                Some(v) if !v.is_empty() => {
+                    let list: Vec<x11rb::protocol::xproto::Rectangle> = v
+                        .iter()
+                        .map(|r| x11rb::protocol::xproto::Rectangle {
+                            x: r[0] as i16,
+                            y: r[1] as i16,
+                            width: r[2].max(1) as u16,
+                            height: r[3].max(1) as u16,
+                        })
+                        .collect();
+                    self.conn.shape_rectangles(
+                        shape::SO::SET,
+                        shape::SK::INPUT,
+                        x11rb::protocol::xproto::ClipOrdering::UNSORTED,
+                        self.window,
+                        0,
+                        0,
+                        &list,
+                    )
+                }
+                _ => self.conn.shape_mask(shape::SO::SET, shape::SK::INPUT, self.window, 0, 0, x11rb::NONE),
+            };
+            let _ = shaped;
+        }
+        let _ = self.conn.flush();
         self.blur = Some(rects);
     }
 
