@@ -101,6 +101,7 @@ pub struct SidestageApp {
     pub toast: Option<Toast>,
     pub section_rects: Vec<(String, egui::Rect)>,
     pub menu_open: bool,
+    away_since: Option<Instant>,
     /// Areas covered by fullscreen apps, from the backend.
     fullscreen: Vec<sidestage_core::FullscreenArea>,
     /// The sidebar is suspended for a fullscreen app.
@@ -220,6 +221,7 @@ impl SidestageApp {
             toast: None,
             section_rects: Vec::new(),
             menu_open: false,
+            away_since: None,
             fullscreen: Vec::new(),
             paused: false,
             section_launch: HashMap::new(),
@@ -550,6 +552,49 @@ impl SidestageApp {
         !self.config.settings.auto_hide || self.autohide.shown
     }
 
+    /// Menus, search and renames can't see clicks in other apps, so they
+    /// would stay open forever (and keep an auto-hidden sidebar showing).
+    /// Close them once the pointer has been away for a moment, or when
+    /// another window took the keyboard.
+    fn close_stale_ui(&mut self, ctx: &egui::Context) {
+        let toolkit_hover = ctx.input(|i| i.pointer.hover_pos().is_some());
+        let platform = self.panel.as_mut().and_then(|p| p.pointer_inside());
+        let inside = platform.unwrap_or(toolkit_hover) || ctx.dragged_id().is_some();
+        let focused = ctx.input(|i| i.focused);
+        if inside {
+            self.away_since = None;
+            return;
+        }
+        let away = self.away_since.get_or_insert_with(Instant::now).elapsed();
+        let pending =
+            egui::Popup::is_any_open(ctx) || self.search_open || self.renaming_section.is_some();
+        if !pending {
+            return;
+        }
+        if away < Duration::from_millis(1200) {
+            ctx.request_repaint_after(Duration::from_millis(200));
+            return;
+        }
+        if egui::Popup::is_any_open(ctx) {
+            log::debug!("closing menus: pointer left the sidebar");
+            egui::Popup::close_all(ctx);
+            self.menu_open = false;
+        }
+        // Typing continues while the sidebar has the keyboard; once another
+        // window took it, search/rename are abandoned.
+        if !focused || !self.keyboard_granted {
+            if self.search_open {
+                log::debug!("closing search: sidebar lost focus");
+                self.search_open = false;
+                self.search.clear();
+            }
+            self.renaming_section = None;
+            self.keyboard_wanted = false;
+        } else {
+            ctx.request_repaint_after(Duration::from_millis(300));
+        }
+    }
+
     fn update_autohide(&mut self, ctx: &egui::Context) {
         if self.paused {
             return;
@@ -572,7 +617,6 @@ impl SidestageApp {
         // edits (e.g. newly added favourites) are visible.
         let peeking = self.peek_until.map(|t| Instant::now() < t).unwrap_or(false);
         let busy = self.keyboard_wanted
-            || self.settings_open
             || peeking
             || self.menu_open
             || ctx.dragged_id().is_some()
@@ -784,6 +828,7 @@ impl eframe::App for SidestageApp {
         self.drain_events(ctx);
         self.handle_tray(ctx);
         self.poll_background();
+        self.close_stale_ui(ctx);
         self.update_autohide(ctx);
         self.place_panel(ctx, frame);
         self.sync_keyboard();
