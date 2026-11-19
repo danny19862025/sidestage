@@ -32,6 +32,7 @@ use self::windows as imp;
 
 pub mod apps;
 pub mod autostart;
+pub mod cmdline;
 pub mod hotkey;
 pub mod icons;
 pub mod launch;

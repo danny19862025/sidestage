@@ -173,16 +173,7 @@ fn shell_open(file: &str, params: &str, dir: Option<&str>) -> Result<()> {
 }
 
 fn quote_args(args: &[String]) -> String {
-    args.iter()
-        .map(|a| {
-            if a.is_empty() || a.contains([' ', '\t', '"']) {
-                format!("\"{}\"", a.replace('"', "\\\""))
-            } else {
-                a.clone()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::cmdline::join_args(args)
 }
 
 pub fn launch(target: &LaunchTarget) -> Result<()> {

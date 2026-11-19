@@ -18,10 +18,15 @@ fn locale() -> Option<String> {
 
 /// All desktop entries, keyed by desktop-file id, first match wins (user dirs first).
 fn scan() -> Vec<DesktopEntry> {
-    let loc = locale();
+    scan_dirs(&super::icons::data_dirs(), locale().as_deref())
+}
+
+/// Scans `<base>/applications` for each base in priority order; the first
+/// entry for an id wins, including `Hidden=true` overrides.
+fn scan_dirs(bases: &[PathBuf], loc: Option<&str>) -> Vec<DesktopEntry> {
     let mut by_id: HashMap<String, DesktopEntry> = HashMap::new();
     let mut order = Vec::new();
-    for base in super::icons::data_dirs() {
+    for base in bases {
         let root = base.join("applications");
         let mut stack = vec![root.clone()];
         while let Some(dir) = stack.pop() {
@@ -47,7 +52,7 @@ fn scan() -> Vec<DesktopEntry> {
                 if by_id.contains_key(&id) {
                     continue;
                 }
-                if let Some(mut entry) = DesktopEntry::load(&p, loc.as_deref()) {
+                if let Some(mut entry) = DesktopEntry::load(&p, loc) {
                     entry.id = id.clone();
                     order.push(id.clone());
                     by_id.insert(id, entry);
@@ -100,10 +105,13 @@ fn to_app(e: &DesktopEntry) -> AppEntry {
 
 pub fn installed_apps() -> Vec<AppEntry> {
     refresh();
-    let desktops = super::desktops();
-    let mut apps: Vec<AppEntry> = entries()
+    listable(&entries(), &super::desktops())
+}
+
+fn listable(entries: &[DesktopEntry], desktops: &[String]) -> Vec<AppEntry> {
+    let mut apps: Vec<AppEntry> = entries
         .iter()
-        .filter(|e| e.is_listable(&desktops))
+        .filter(|e| e.is_listable(desktops))
         .map(to_app)
         .collect();
     apps.sort_by_key(|a| a.name.to_lowercase());
@@ -199,4 +207,42 @@ pub fn find_for_pid(pid: u32) -> Option<DesktopEntry> {
     let exe: PathBuf = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
     let name = exe.file_name()?.to_string_lossy().to_lowercase();
     find_for_app_id(&name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hidden_user_override_hides_system_entry() {
+        let user = tempfile::tempdir().unwrap();
+        let system = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(user.path().join("applications")).unwrap();
+        std::fs::create_dir_all(system.path().join("applications")).unwrap();
+        std::fs::write(
+            system.path().join("applications/foo.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Foo\nExec=foo\n",
+        )
+        .unwrap();
+        std::fs::write(
+            system.path().join("applications/bar.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Bar\nExec=bar\n",
+        )
+        .unwrap();
+        // Minimal override: no Name, only Hidden.
+        std::fs::write(
+            user.path().join("applications/foo.desktop"),
+            "[Desktop Entry]\nHidden=true\n",
+        )
+        .unwrap();
+        let entries = scan_dirs(
+            &[user.path().to_path_buf(), system.path().to_path_buf()],
+            None,
+        );
+        let names: Vec<String> = listable(&entries, &[])
+            .into_iter()
+            .map(|a| a.name)
+            .collect();
+        assert_eq!(names, ["Bar"]);
+    }
 }

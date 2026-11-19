@@ -56,19 +56,40 @@ impl LaunchTarget {
         match self {
             LaunchTarget::DesktopEntry { path } => format!("desktop:{}", path.display()),
             LaunchTarget::Path { path, args } => {
-                format!("path:{}|{}", path.display(), args.join(" "))
+                format!("path:{}|{}", path.display(), args_key(args))
             }
             LaunchTarget::AppsFolder { parsing_name } => {
                 format!("apps:{}", parsing_name.to_lowercase())
             }
-            LaunchTarget::Command { program, args } => format!("cmd:{program}|{}", args.join(" ")),
-            LaunchTarget::Url { url } => format!("url:{}", url.to_lowercase()),
+            LaunchTarget::Command { program, args } => format!("cmd:{program}|{}", args_key(args)),
+            LaunchTarget::Url { url } => format!("url:{}", url_key(url)),
         }
     }
 
     /// True for targets that open a website.
     pub fn is_url(&self) -> bool {
         matches!(self, LaunchTarget::Url { .. })
+    }
+}
+
+/// Arguments encoded so `["a b"]` and `["a", "b"]` stay distinct.
+fn args_key(args: &[String]) -> String {
+    serde_json::to_string(args).unwrap_or_default()
+}
+
+/// Scheme and host are case-insensitive; path, query and fragment are not.
+fn url_key(url: &str) -> String {
+    match url.split_once("://") {
+        Some((scheme, rest)) => {
+            let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+            format!(
+                "{}://{}{}",
+                scheme.to_ascii_lowercase(),
+                rest[..end].to_ascii_lowercase(),
+                &rest[end..]
+            )
+        }
+        None => url.to_string(),
     }
 }
 
@@ -564,6 +585,57 @@ mod tests {
             },
             IconSource::Auto,
         )
+    }
+
+    #[test]
+    fn distinct_targets_are_not_duplicates() {
+        let url = |u: &str| LaunchTarget::Url { url: u.into() };
+        assert_ne!(
+            url("https://example.com/Report").key(),
+            url("https://example.com/report").key()
+        );
+        assert_eq!(
+            url("HTTPS://Example.COM/Report").key(),
+            url("https://example.com/Report").key()
+        );
+        assert_ne!(
+            url("https://x.org/?q=A").key(),
+            url("https://x.org/?q=a").key()
+        );
+        let cmd = |a: &[&str]| LaunchTarget::Command {
+            program: "p".into(),
+            args: a.iter().map(|s| s.to_string()).collect(),
+        };
+        assert_ne!(cmd(&["a b"]).key(), cmd(&["a", "b"]).key());
+        let path = |a: &[&str]| LaunchTarget::Path {
+            path: "/x".into(),
+            args: a.iter().map(|s| s.to_string()).collect(),
+        };
+        assert_ne!(path(&["a b"]).key(), path(&["a", "b"]).key());
+        // Both can live in one section.
+        let mut c = Config::default();
+        let sec = c.sections[0].id.clone();
+        assert!(c
+            .add_favourite(&sec, Favourite::new("1", cmd(&["a b"]), IconSource::Auto))
+            .is_some());
+        assert!(c
+            .add_favourite(
+                &sec,
+                Favourite::new("2", cmd(&["a", "b"]), IconSource::Auto)
+            )
+            .is_some());
+        assert!(c
+            .add_favourite(
+                &sec,
+                Favourite::new("3", url("https://e.com/Report"), IconSource::Auto)
+            )
+            .is_some());
+        assert!(c
+            .add_favourite(
+                &sec,
+                Favourite::new("4", url("https://e.com/report"), IconSource::Auto)
+            )
+            .is_some());
     }
 
     #[test]

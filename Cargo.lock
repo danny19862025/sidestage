@@ -3340,6 +3340,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sidestage-core",
+ "tempfile",
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-plasma",

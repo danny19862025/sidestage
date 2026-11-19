@@ -75,7 +75,17 @@ impl DesktopEntry {
                 .map(|v| v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false)
         };
-        let name = get("Name")?;
+        let hidden = flag("Hidden");
+        // A user override that only says `Hidden=true` (spec: "deleted")
+        // must still shadow the system entry, so Name is optional for it.
+        let name = match get("Name") {
+            Some(n) => n,
+            None if hidden => path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            None => return None,
+        };
         Some(DesktopEntry {
             path: path.to_path_buf(),
             id: path
@@ -92,7 +102,7 @@ impl DesktopEntry {
             working_dir: raw.get("Path").cloned().filter(|s| !s.is_empty()),
             terminal: flag("Terminal"),
             no_display: flag("NoDisplay"),
-            hidden: flag("Hidden"),
+            hidden,
             kind: raw.get("Type").cloned().unwrap_or_default(),
             url: raw
                 .get("URL")
@@ -319,6 +329,24 @@ mod tests {
             expand_exec(r#"sh -c "echo \\$HOME""#, None, "", "").unwrap(),
             ["sh", "-c", "echo $HOME"]
         );
+    }
+
+    #[test]
+    fn hidden_override_without_name_parses() {
+        let e = DesktopEntry::parse(
+            Path::new("/u/firefox.desktop"),
+            "[Desktop Entry]\nHidden=true\n",
+            None,
+        )
+        .unwrap();
+        assert!(e.hidden);
+        assert!(!e.is_listable(&[]));
+        assert!(DesktopEntry::parse(
+            Path::new("x.desktop"),
+            "[Desktop Entry]\nType=Application\n",
+            None
+        )
+        .is_none());
     }
 
     #[test]
