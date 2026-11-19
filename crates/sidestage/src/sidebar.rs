@@ -124,11 +124,8 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
             full.right() - 1.5
         };
         let mid = full.center().y;
-        // A full-height hint plus a brighter grip in the middle.
-        ui.painter().line_segment(
-            [pos2(x, full.top() + 8.0), pos2(x, full.bottom() - 8.0)],
-            Stroke::new(3.0, palette.accent.gamma_multiply(0.25)),
-        );
+        // Just a short grip in the middle; the whole edge still reveals.
+        // (A full-height hint read as a stray line down the screen edge.)
         ui.painter().line_segment(
             [pos2(x, mid - 70.0), pos2(x, mid + 70.0)],
             Stroke::new(3.0, palette.accent.gamma_multiply(0.9)),
