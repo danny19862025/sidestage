@@ -183,11 +183,44 @@ sudo pacman -S --needed base-devel git rustup libxkbcommon mesa wayland libx11
 rustup default stable
 ```
 
-Debian / Ubuntu:
+Debian / Ubuntu / Linux Mint / Pop!_OS:
 
 ```bash
-sudo apt install build-essential git pkg-config libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev
+sudo apt install build-essential git curl pkg-config libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev
+```
+
+Fedora:
+
+```bash
+sudo dnf install gcc gcc-c++ make git curl pkgconf-pkg-config libxkbcommon-devel mesa-libGL-devel mesa-libEGL-devel wayland-devel libX11-devel
+```
+
+openSUSE (Tumbleweed / Leap):
+
+```bash
+sudo zypper install gcc gcc-c++ make git curl pkg-config libxkbcommon-devel Mesa-libGL-devel Mesa-libEGL-devel wayland-devel libX11-devel
+```
+
+Gentoo:
+
+```bash
+sudo emerge --ask --noreplace dev-vcs/git net-misc/curl x11-libs/libxkbcommon media-libs/mesa dev-libs/wayland x11-libs/libX11
+```
+
+(The compiler and `pkgconf` are already part of Gentoo's base system. Mesa needs
+the `egl` USE flag, which is on by default.)
+
+Void Linux:
+
+```bash
+sudo xbps-install -S base-devel git curl pkg-config libxkbcommon-devel MesaLib-devel wayland-devel libX11-devel
+```
+
+On every distro except Arch, then install Rust with rustup:
+
+```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # installs rustup + stable Rust
+source "$HOME/.cargo/env"                                        # or open a new terminal
 ```
 
 Sidestage needs **Rust 1.88 or newer**. Use `rustup` rather than your distro's
