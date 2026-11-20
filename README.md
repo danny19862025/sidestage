@@ -172,23 +172,70 @@ remains.
 
 Requires Rust 1.88+ (`rustup` stable).
 
-### Linux
+### Linux (GNOME or KDE Plasma)
 
-Build dependencies: a C toolchain, `pkg-config`, `libxkbcommon`, OpenGL/EGL,
-Wayland and X11 client libraries (present on any desktop install;
-on Debian/Ubuntu: `libxkbcommon-dev libgl1-mesa-dev libwayland-dev`). Runtime
-needs XWayland on Wayland sessions.
+**1. Install the build dependencies**
+
+Arch Linux:
 
 ```bash
-cargo run -p sidestage                 # run from the source tree
-scripts/install-linux.sh               # build + install to ~/.local (binary, .desktop, icon,
-                                       # and the GNOME extension when GNOME is present)
-scripts/uninstall-linux.sh
+sudo pacman -S --needed base-devel git rustup libxkbcommon mesa wayland libx11
+rustup default stable
 ```
 
-On **GNOME**, `install-linux.sh` copies and enables
-`sidestage@sidestage.app`. GNOME on Wayland loads new extensions only after
-you log out and back in once.
+Debian / Ubuntu:
+
+```bash
+sudo apt install build-essential git pkg-config libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # installs rustup + stable Rust
+```
+
+Sidestage needs **Rust 1.88 or newer**. Use `rustup` rather than your distro's
+`rust` package, which may be older. Check with `rustc --version`.
+On Wayland sessions, XWayland must be installed (it is on GNOME and KDE by default).
+
+**2. Get the source**
+
+```bash
+git clone https://github.com/danny19862025/sidestage
+cd sidestage
+```
+
+**3. Build and install**
+
+```bash
+scripts/install-linux.sh
+```
+
+This builds a release binary and installs it for your user only (no root):
+the binary goes to `~/.local/bin/sidestage`, plus a `.desktop` entry and an icon.
+Make sure `~/.local/bin` is in your `PATH`. On GNOME, the script also installs
+and enables the Sidestage Shell extension (`sidestage@sidestage.app`).
+
+**4. GNOME on Wayland only: log out and back in once**
+
+GNOME loads new extensions only after you log in again. The minimized-window
+cards need this extension. If the extension still isn't active after you log
+back in, run:
+
+```bash
+gnome-extensions enable sidestage@sidestage.app
+```
+
+KDE Plasma needs no extension.
+
+**5. Start it**
+
+Start it from your app launcher, or run `sidestage`.
+
+**Try it without installing:** `cargo run -p sidestage` runs it straight from the source folder.
+
+**Uninstall:** `scripts/uninstall-linux.sh` removes the binary, launcher entry,
+icon, autostart entry and GNOME extension. Your favourites are kept in
+`~/.config/sidestage/config.json`.
+
+> NixOS: the install script won't work as is. Build inside a Nix dev shell
+> that provides the libraries above.
 
 ### Windows 11
 
