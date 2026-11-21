@@ -3,6 +3,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -40,7 +41,43 @@ jobs:
       - run: cargo test --workspace
       - run: cargo clippy --workspace -- -D warnings
       - run: cargo build --release -p sidestage
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
+            Where-Object name -eq 'sidestage' | ForEach-Object version
+          & $iscc /Q "/DAppVersion=$version" installer\Sidestage.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item target\release\sidestage.exe dist\sidestage-windows-x64-portable.exe
+          Get-ChildItem dist
       - uses: actions/upload-artifact@v4
         with:
           name: sidestage-windows-x64
-          path: target/release/sidestage.exe
+          path: |
+            dist/Sidestage-Setup-*.exe
+            dist/sidestage-windows-x64-portable.exe
+
+  # Pushing a version tag (e.g. v0.2.0) publishes a GitHub release with the
+  # Windows installer, the portable Windows exe and the Linux tarball.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/Sidestage-Setup-*.exe
+            artifacts/sidestage-windows-x64-portable.exe
+            artifacts/sidestage-linux-x64.tar.gz

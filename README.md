@@ -11,6 +11,22 @@ by macOS Stage Manager but organised your way:
 Sidestage does **not** hide or rearrange other windows when you switch apps.
 It only lists windows you minimize yourself.
 
+## Download
+
+**Windows 10 (1809+) / 11:** download **`Sidestage-Setup-<version>.exe`** from the
+[latest release](https://github.com/danny19862025/sidestage/releases/latest) and
+run it. It installs for your user only, with no administrator prompt, and adds
+Sidestage to the Start menu. Optionally it can start Sidestage when you sign in.
+Uninstall it from *Settings → Apps → Installed apps*.
+A portable `sidestage-windows-x64-portable.exe` is attached to each release too.
+
+> The installer isn't code-signed yet, so Windows SmartScreen may say
+> *"Windows protected your PC"*. Click **More info → Run anyway**.
+
+**Linux:** build from source. See [Linux (GNOME or KDE Plasma)](#linux-gnome-or-kde-plasma) below.
+
+## Screenshots
+
 ### Windows 11
 
 | Dark theme, live preview of a minimized window | Light theme |
@@ -36,7 +52,9 @@ It only lists windows you minimize yourself.
   whether to keep the apps by moving them to another section).
 - Add apps from the installed-apps picker (Start menu / AppsFolder on Windows,
   `.desktop` entries on Linux, with search). You can also choose a file or program,
-  or drag a shortcut, `.exe`, `.lnk` or `.desktop` file onto the sidebar.
+  or drag a shortcut, `.exe`, `.lnk` or `.desktop` file onto the sidebar. On
+  Windows you can also drag an app straight from the Start menu. A drop lands
+  in the section under the pointer.
 - Drag favourites to reorder them or move them between sections. You can also
   use right-click → *Move to*.
 - Click to launch. Custom names and icons (an image file, a program's icon, or
@@ -161,10 +179,10 @@ Where something is compositor-specific, and why:
 | Global shortcut + conflict detection | `RegisterHotKey`, **untested** | ✅ KGlobalAccel, verified | ✅ extension, verified | `XGrabKey`, untested |
 | Pause in fullscreen | foreground-covers-monitor, **untested** | ✅ verified (2 monitors) | ✅ verified (2 monitors) | ✅ verified (detection) |
 
-Browsers can't drop links straight onto the sidebar: winit, the
-windowing library, accepts only file drops. Drag the link to the
-desktop first (which creates a `.url` or `.desktop` file), or use
-*Add website…*. Wayland desktops other than KDE and GNOME have no
+Browsers can't drop links straight onto the sidebar: it accepts files,
+folders and shortcuts (and, on Windows, Start-menu apps), not links. Drag
+the link to the desktop first (which creates a `.url` or `.desktop` file),
+or use *Add website…*. Wayland desktops other than KDE and GNOME have no
 verifiable global-shortcut API, so Settings says so and the search button
 remains.
 
@@ -272,16 +290,34 @@ icon, autostart entry and GNOME extension. Your favourites are kept in
 
 ### Windows 11
 
-Install Rust with the MSVC toolchain (Visual Studio Build Tools, "Desktop
-development with C++"), then:
+Most people should use the installer from the [Download](#download) section.
+To build it yourself, install Rust with the MSVC toolchain (Visual Studio Build
+Tools, "Desktop development with C++"), then:
 
 ```powershell
 cargo build --release -p sidestage
 .\target\release\sidestage.exe
 ```
 
-CI (`.github/workflows/build.yml`) builds and uploads `sidestage.exe` and a
-Linux tarball on every push.
+**Build the installer** (needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)):
+
+```powershell
+cargo build --release -p sidestage
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=0.2.0 installer\Sidestage.iss
+# -> dist\Sidestage-Setup-0.2.0.exe
+```
+
+(If Inno Setup was installed for all users, ISCC is in
+`C:\Program Files (x86)\Inno Setup 6\`.) The installer puts Sidestage in
+`%LOCALAPPDATA%\Programs\Sidestage` (or Program Files for an all-users install),
+adds Start-menu shortcuts and an *Installed apps* entry, and can turn on
+launch at sign-in. Upgrading or uninstalling quits a running Sidestage first,
+so its reserved screen space is released. Uninstalling keeps your favourites in
+`%APPDATA%\Sidestage`. Silent install: `Sidestage-Setup-<version>.exe /VERYSILENT`.
+
+CI (`.github/workflows/build.yml`) builds the Windows installer, a portable
+`sidestage.exe` and a Linux tarball on every push. Pushing a version tag
+(`git tag v0.2.0 && git push origin v0.2.0`) publishes them as a GitHub release.
 
 ### Command line
 
@@ -324,8 +360,8 @@ reveal and hide; and the X11/EWMH backend.
 
 ## Status and what still needs testing elsewhere
 
-Verified on this machine (Arch Linux, KDE Plasma 6.8.3 Wayland, GNOME Shell 51,
-XWayland 24.1):
+Verified on real machines (Arch Linux with KDE Plasma 6.8.3 Wayland, GNOME
+Shell 51 and XWayland 24.1; and Windows 11):
 
 - **KDE Plasma Wayland:** window list, minimize detection, previews of minimized
   windows, restore and focus, stacks, reserved space, auto-hide, no focus
@@ -337,15 +373,17 @@ XWayland 24.1):
 - **X11/EWMH backend:** list, minimize, restore (against KWin as the X11 WM for
   XWayland clients).
 
+- **Windows 11 (two monitors, 150% scaling on the main one):** live DWM
+  previews of minimized windows, click to restore and focus, AppBar
+  reservation, left and right edge, auto-hide reveal at the screen edge and
+  hiding again, pause in fullscreen, drag-and-drop of `.lnk` files and of
+  Start-menu apps into the section under the pointer, and the installer
+  (install, upgrade, uninstall, launch at sign-in).
+
 **Not yet tested. Please try these and report back:**
 
-- **Windows 11: everything at runtime.** The Windows code compiles and passes
-  clippy for `x86_64-pc-windows-msvc`, but it has never run, because no
-  Windows machine or MSVC linker was available. Points to check: DWM
-  thumbnails of minimized windows (expected to show the last frame, sized
-  from the window's restored placement); AppBar reservation next to the
-  taskbar; foreground permission when restoring; tray icon; drag-and-drop of
-  `.lnk` files; per-monitor DPI.
+- **Windows:** launch section, restore all, search and the global shortcut,
+  the tray icon menu, Windows 10, and mixed-DPI monitor setups.
 - The tray icon in a real Plasma session (the nested test sessions have no
   StatusNotifier host). GNOME uses the extension's top-bar menu instead.
 - A real (non-headless) GNOME session; GNOME on X11 (deprecated upstream);
