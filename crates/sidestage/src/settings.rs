@@ -271,10 +271,6 @@ fn nav(app: &mut SidestageApp, ui: &mut Ui, reveal: f32) {
                         .size(11.0)
                         .color(p.text_faint),
                 );
-                ui.add_space(6.0);
-                if coffee_button(ui, ui.available_width()).clicked() {
-                    open_url(app, COFFEE_URL);
-                }
             });
         });
 }
