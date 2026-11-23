@@ -503,6 +503,16 @@ impl SidestageApp {
         self.extra_rx = Some(rx);
     }
 
+    /// Opens Settings, or brings it forward. `intro` replays the logo intro
+    /// (gear button, tray, `--settings`); shortcuts into a specific editor
+    /// only play it when the window wasn't open yet.
+    pub fn open_settings(&mut self, intro: bool) {
+        if intro || !self.settings_open {
+            self.settings.restart_intro();
+        }
+        self.settings_open = true;
+    }
+
     fn handle_tray(&mut self, ctx: &egui::Context) {
         let mut cmds: Vec<TrayCommand> = self.tray_rx.try_iter().collect();
         if let Some(rx) = &self.extra_rx {
@@ -511,7 +521,7 @@ impl SidestageApp {
         for cmd in cmds {
             match cmd {
                 TrayCommand::Settings => {
-                    self.settings_open = true;
+                    self.open_settings(true);
                     ctx.send_viewport_cmd_to(
                         crate::settings::viewport_id(),
                         egui::ViewportCommand::Focus,

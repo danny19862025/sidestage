@@ -11,6 +11,7 @@ mod single;
 mod textures;
 mod theme;
 mod tray;
+mod update;
 
 use std::sync::mpsc;
 

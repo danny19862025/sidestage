@@ -305,7 +305,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
                     app.settings.tab = Tab::Favourites;
                     app.settings.selected_section = Some(id);
                     app.settings.confirm_delete = true;
-                    app.settings_open = true;
+                    app.open_settings(false);
                 }
             }
         }
@@ -339,7 +339,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
                 .find(&id)
                 .map(|(s, _)| app.config.sections[s].id.clone());
             app.settings.editing = Some(id);
-            app.settings_open = true;
+            app.open_settings(false);
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
         Action::Restore(id) => app.restore(&id),
@@ -352,7 +352,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
         }
         Action::OpenSettings(tab) => {
             app.settings.tab = tab;
-            app.settings_open = true;
+            app.open_settings(true);
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
         Action::LaunchSection(id) => app.launch_section(ctx, &id),
@@ -369,7 +369,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
             app.settings.show_app_picker = false;
             app.settings.editing = None;
             app.settings.show_website_form = true;
-            app.settings_open = true;
+            app.open_settings(false);
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
         Action::AddApps(section) => {
@@ -378,7 +378,7 @@ fn apply(app: &mut SidestageApp, ctx: &egui::Context, a: Action) {
                 app.settings.selected_section = section;
             }
             app.settings.show_app_picker = true;
-            app.settings_open = true;
+            app.open_settings(false);
             ctx.send_viewport_cmd_to(crate::settings::viewport_id(), egui::ViewportCommand::Focus);
         }
         Action::DropItems { section, items } => {

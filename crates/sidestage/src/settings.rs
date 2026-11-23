@@ -42,6 +42,42 @@ pub struct SettingsUi {
     shortcut_edit: Option<String>,
     /// When the Settings window last opened (drives the logo intro).
     opened_at: Option<std::time::Instant>,
+    /// "Check for updates" on the About page.
+    update: crate::update::UpdateCheck,
+}
+
+impl SettingsUi {
+    /// Plays the logo intro again (Settings opened or brought forward).
+    pub fn restart_intro(&mut self) {
+        self.opened_at = Some(std::time::Instant::now());
+    }
+}
+
+/// The user's support page.
+const COFFEE_URL: &str = "https://buymeacoffee.com/danny1986";
+
+/// Intro timing (seconds): the logo plays alone until `LOGO_END`, then it
+/// flies to the top of the navigation while the page fades in.
+const LOGO_END: f32 = 1.1;
+const OPEN_END: f32 = 1.6;
+
+/// `(logo only, reveal)`: whether only the logo is showing, and how far the
+/// page has faded in (0..1).
+fn intro_progress(app: &SidestageApp) -> (bool, f32) {
+    let Some(start) = app.settings.opened_at else {
+        return (false, 1.0);
+    };
+    if !app.config.settings.animations {
+        return (false, 1.0);
+    }
+    let t = start.elapsed().as_secs_f32();
+    (t < LOGO_END, smooth(LOGO_END, OPEN_END, t))
+}
+
+fn open_url(app: &mut SidestageApp, url: &str) {
+    if let Err(e) = sidestage_platform::launch::launch(&sidestage_core::LaunchTarget::Url { url: url.into() }) {
+        app.toast(format!("Couldn't open the browser: {e}"), true);
+    }
 }
 
 /// Opens at about 60 % of the sidebar's display (logical px), within
@@ -87,17 +123,30 @@ pub fn show(app: &mut SidestageApp, ctx: &egui::Context) {
             app.settings.show_app_picker = false;
             app.settings.editing = None;
         }
+        app.settings.update.poll();
         let p = app.palette;
         let fill = ui.visuals().window_fill;
+        let (logo_only, reveal) = intro_progress(app);
+        if logo_only {
+            // Only the animated logo (drawn by `intro`) on a plain page.
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(fill))
+                .show(ui, |_| {});
+            intro(app, ui);
+            return;
+        }
         egui::Panel::left("settings-nav")
             .resizable(false)
-            .exact_size(190.0)
+            .exact_size(210.0)
             .frame(egui::Frame::new().fill(if p.dark {
                 Color32::from_rgb(27, 28, 33)
             } else {
                 Color32::from_rgb(241, 242, 246)
             }))
-            .show(ui, |ui| nav(app, ui));
+            .show(ui, |ui| {
+                ui.set_opacity(reveal);
+                nav(app, ui, reveal);
+            });
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -105,6 +154,9 @@ pub fn show(app: &mut SidestageApp, ctx: &egui::Context) {
                     .inner_margin(egui::Margin::symmetric(24, 18)),
             )
             .show(ui, |ui| {
+                // The page fades in and rises into place after the logo.
+                ui.set_opacity(reveal);
+                ui.add_space((1.0 - reveal) * 18.0);
                 egui::ScrollArea::vertical()
                     .id_salt(("settings", app.settings.tab as u8))
                     .auto_shrink([false, false])
@@ -120,45 +172,149 @@ pub fn show(app: &mut SidestageApp, ctx: &egui::Context) {
     });
 }
 
-fn nav(app: &mut SidestageApp, ui: &mut Ui) {
+/// Where the navigation's logo sits (window coordinates): the intro's logo
+/// lands here. Matches the frame margin and logo size in [`nav`].
+fn nav_logo_center(window: egui::Rect) -> egui::Pos2 {
+    window.min + vec2(14.0 + 14.0, 18.0 + 14.0)
+}
+
+fn nav(app: &mut SidestageApp, ui: &mut Ui, reveal: f32) {
+    use crate::glyphs::{self, Glyph};
     let p = app.palette;
     egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 16))
+        .inner_margin(egui::Margin::symmetric(14, 18))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                if let Some(tex) = app.textures.app_icon("__brand") {
-                    ui.add(egui::Image::new(tex).fit_to_exact_size(vec2(26.0, 26.0)));
+                ui.spacing_mut().item_spacing.x = 10.0;
+                let (logo, _) = ui.allocate_exact_size(vec2(28.0, 28.0), egui::Sense::hover());
+                // While the intro's logo is still flying in, it stands in for this one.
+                if reveal >= 0.999 {
+                    if let Some(tex) = app.textures.app_icon("__brand") {
+                        egui::Image::new(tex).paint_at(ui, logo);
+                    }
                 }
-                ui.label(RichText::new("Sidestage").size(16.0).strong());
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.label(RichText::new("Sidestage").size(16.0).strong());
+                    ui.label(RichText::new("Settings").size(11.5).color(p.text_faint));
+                });
             });
-            ui.add_space(14.0);
-            for (tab, label) in [
-                (Tab::Favourites, "Favourites"),
-                (Tab::Appearance, "Appearance"),
-                (Tab::Behaviour, "Behaviour"),
-                (Tab::Integration, "Integration"),
-                (Tab::About, "About"),
+            ui.add_space(20.0);
+
+            // A selection pill that glides between items, drawn under them.
+            let pill_slot = ui.painter().add(egui::Shape::Noop);
+            let mut selected_rect = None;
+            for (tab, label, glyph) in [
+                (Tab::Favourites, "Favourites", Glyph::Star),
+                (Tab::Appearance, "Appearance", Glyph::Contrast),
+                (Tab::Behaviour, "Behaviour", Glyph::Sliders),
+                (Tab::Integration, "Integration", Glyph::Link),
+                (Tab::About, "About", Glyph::Info),
             ] {
                 let selected = app.settings.tab == tab;
                 let (rect, resp) =
-                    ui.allocate_exact_size(vec2(ui.available_width(), 32.0), egui::Sense::click());
-                if selected {
-                    ui.painter().rect_filled(rect, 8.0, p.accent_soft);
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(rect, 8.0, p.hover);
+                    ui.allocate_exact_size(vec2(ui.available_width(), 38.0), egui::Sense::click());
+                let hover = ui
+                    .ctx()
+                    .animate_bool_with_time(resp.id.with("hover"), resp.hovered() && !selected, 0.16);
+                if hover > 0.0 {
+                    ui.painter().rect_filled(rect, 10.0, p.hover.gamma_multiply(hover));
                 }
+                if selected {
+                    selected_rect = Some(rect);
+                }
+                // Hovered items lean in slightly; the selected one is accented.
+                let shift = 4.0 * hover;
+                let (icon, text) = if selected {
+                    (p.accent, p.text)
+                } else {
+                    (
+                        p.text_faint.lerp_to_gamma(p.accent, hover),
+                        p.text_dim.lerp_to_gamma(p.text, hover),
+                    )
+                };
+                glyphs::paint(
+                    ui.painter(),
+                    egui::Rect::from_center_size(rect.left_center() + vec2(22.0 + shift, 0.0), vec2(18.0, 18.0)),
+                    glyph,
+                    icon,
+                );
                 ui.painter().text(
-                    rect.left_center() + vec2(12.0, 0.0),
+                    rect.left_center() + vec2(42.0 + shift, 0.0),
                     egui::Align2::LEFT_CENTER,
                     label,
                     egui::FontId::proportional(13.5),
-                    if selected { p.accent } else { p.text },
+                    text,
                 );
-                if resp.clicked() {
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     app.settings.tab = tab;
                 }
+                ui.add_space(3.0);
             }
+            if let Some(r) = selected_rect {
+                let y = ui
+                    .ctx()
+                    .animate_value_with_time(ui.scope_id().with("nav-pill"), r.top(), 0.22);
+                let pill = egui::Rect::from_min_size(egui::pos2(r.left(), y), r.size());
+                ui.painter()
+                    .set(pill_slot, egui::Shape::rect_filled(pill, 10.0, p.accent_soft));
+                ui.painter().rect_filled(
+                    egui::Rect::from_center_size(egui::pos2(pill.left() + 2.5, pill.center().y), vec2(3.0, 18.0)),
+                    2.0,
+                    p.accent,
+                );
+            }
+
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                ui.label(
+                    RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                        .size(11.0)
+                        .color(p.text_faint),
+                );
+                ui.add_space(6.0);
+                if coffee_button(ui, ui.available_width()).clicked() {
+                    open_url(app, COFFEE_URL);
+                }
+            });
         });
+}
+
+/// Buy Me a Coffee button in its brand yellow; lifts a little on hover.
+fn coffee_button(ui: &mut Ui, width: f32) -> egui::Response {
+    use crate::glyphs::{self, Glyph};
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 38.0), egui::Sense::click());
+    let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.16);
+    let r = rect.translate(vec2(0.0, -1.5 * hover));
+    let yellow = Color32::from_rgb(255, 221, 0).lerp_to_gamma(Color32::from_rgb(255, 230, 64), hover);
+    let ink = Color32::from_rgb(13, 12, 34);
+    ui.painter().add(
+        egui::Shadow {
+            offset: [0, 2 + (3.0 * hover) as i8],
+            blur: (6.0 + 8.0 * hover) as u8,
+            spread: 0,
+            color: Color32::from_black_alpha((40.0 + 40.0 * hover) as u8),
+        }
+        .as_shape(r, 10.0),
+    );
+    ui.painter().rect_filled(r, 10.0, yellow);
+    let galley = ui
+        .painter()
+        .layout_no_wrap("Buy me a coffee".into(), egui::FontId::proportional(13.5), ink);
+    let total = 18.0 + 8.0 + galley.size().x;
+    let x0 = r.center().x - total / 2.0;
+    glyphs::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(egui::pos2(x0 + 9.0, r.center().y), vec2(18.0, 18.0)),
+        Glyph::Coffee,
+        ink,
+    );
+    ui.painter().galley(
+        egui::pos2(x0 + 26.0, r.center().y - galley.size().y / 2.0),
+        galley,
+        ink,
+    );
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Support Sidestage on buymeacoffee.com")
 }
 
 fn heading(ui: &mut Ui, text: &str, sub: &str) {
@@ -1224,15 +1380,16 @@ fn smooth(a: f32, b: f32, t: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// Each time Settings opens: the logo springs in, a ring pulses out, the
-/// name fades in, then the overlay dissolves to reveal the page.
+/// Each time Settings opens or is brought forward: on a plain page the logo
+/// springs in, a ring pulses out and the name fades in (logo only). Then the
+/// logo shrinks and flies to its place at the top of the navigation while
+/// the page fades in underneath.
 fn intro(app: &mut SidestageApp, ui: &mut Ui) {
-    const DURATION: f32 = 1.35;
     let Some(start) = app.settings.opened_at else {
         return;
     };
     let t = start.elapsed().as_secs_f32();
-    if !app.config.settings.animations || t >= DURATION {
+    if !app.config.settings.animations || t >= OPEN_END {
         return;
     }
     ui.ctx().request_repaint();
@@ -1252,18 +1409,21 @@ fn intro(app: &mut SidestageApp, ui: &mut Ui) {
         });
     let (painter, layer) = area.inner;
     ui.ctx().move_to_top(layer);
-    let fade = 1.0 - smooth(0.95, DURATION, t);
+    // 0 while the logo plays alone, then 0..1 as the page opens.
+    let open = smooth(LOGO_END, OPEN_END, t);
+    let fade = 1.0 - open;
     let bg = ui.visuals().window_fill;
     painter.rect_filled(rect, 0.0, bg.gamma_multiply(fade));
-    let c = rect.center() - vec2(0.0, 24.0);
+    let home = rect.center() - vec2(0.0, 24.0);
+    let c = home + (nav_logo_center(rect) - home) * open;
     let pop = spring(smooth(0.0, 0.55, t));
-    let size = 112.0 * pop;
+    let size = 112.0 * pop + (28.0 - 112.0 * pop) * open;
     // Pulse ring.
     let ring_t = smooth(0.18, 0.95, t);
     if ring_t > 0.0 && ring_t < 1.0 {
         let r = 62.0 + 28.0 * ring_t;
         painter.circle_stroke(
-            c,
+            home,
             r,
             egui::Stroke::new(
                 3.0 * (1.0 - ring_t),
@@ -1292,26 +1452,107 @@ fn intro(app: &mut SidestageApp, ui: &mut Ui) {
         mesh.add_rect_with_uv(
             r,
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            Color32::WHITE.gamma_multiply(fade),
+            // Stays solid while it flies; the navigation's logo takes over.
+            Color32::WHITE,
         );
         mesh.rotate(egui::emath::Rot2::from_angle(tilt), c);
         painter.add(egui::Shape::mesh(mesh));
     }
-    let text_a = smooth(0.35, 0.7, t) * fade;
+    // The name stays put and fades out quickly as the page opens.
+    let gone = 1.0 - smooth(LOGO_END, LOGO_END + 0.2, t);
+    let text_a = smooth(0.35, 0.7, t) * gone;
     painter.text(
-        c + vec2(0.0, 112.0 + 10.0 * (1.0 - smooth(0.35, 0.7, t))),
+        home + vec2(0.0, 112.0 + 10.0 * (1.0 - smooth(0.35, 0.7, t))),
         egui::Align2::CENTER_CENTER,
         "Sidestage",
         egui::FontId::proportional(26.0),
         p.text.gamma_multiply(text_a),
     );
     painter.text(
-        c + vec2(0.0, 142.0),
+        home + vec2(0.0, 142.0),
         egui::Align2::CENTER_CENTER,
         "Settings",
         egui::FontId::proportional(14.0),
-        p.text_dim.gamma_multiply(smooth(0.5, 0.8, t) * fade),
+        p.text_dim.gamma_multiply(smooth(0.5, 0.8, t) * gone),
     );
+}
+
+/// "Updates" on the About page: check GitHub for a newer release.
+fn update_group(app: &mut SidestageApp, ui: &mut Ui) {
+    use crate::glyphs::{self, Glyph};
+    use crate::update::UpdateState;
+    let p = app.palette;
+    let state = app.settings.update.state.clone();
+    let mut open: Option<String> = None;
+    let mut check = false;
+    group(ui, app, |ui| {
+        ui.horizontal(|ui| {
+            let (status, color) = match &state {
+                UpdateState::Idle => (
+                    format!("You have version {}.", env!("CARGO_PKG_VERSION")),
+                    p.text_dim,
+                ),
+                UpdateState::Checking => ("Checking for updates…".to_string(), p.text_dim),
+                UpdateState::UpToDate { latest } => {
+                    (format!("You're up to date (latest is {latest})."), p.text)
+                }
+                UpdateState::Available { latest, .. } => (
+                    format!("Version {latest} is available (you have {}).", env!("CARGO_PKG_VERSION")),
+                    p.accent,
+                ),
+                UpdateState::Failed(e) => (format!("Couldn't check for updates: {e}."), p.danger),
+            };
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Updates").strong());
+                ui.label(RichText::new(status).color(color));
+            });
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                match &state {
+                    UpdateState::Available { url, .. } => {
+                        let url = url.clone();
+                        let (rect, resp) =
+                            ui.allocate_exact_size(vec2(150.0, 32.0), egui::Sense::click());
+                        let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.16);
+                        ui.painter().rect_filled(
+                            rect,
+                            9.0,
+                            p.accent.lerp_to_gamma(Color32::WHITE, 0.12 * hover),
+                        );
+                        glyphs::paint(
+                            ui.painter(),
+                            egui::Rect::from_center_size(rect.left_center() + vec2(22.0, 0.0), vec2(16.0, 16.0)),
+                            Glyph::Download,
+                            Color32::WHITE,
+                        );
+                        ui.painter().text(
+                            rect.left_center() + vec2(36.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            "Download",
+                            egui::FontId::proportional(13.5),
+                            Color32::WHITE,
+                        );
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            open = Some(url);
+                        }
+                    }
+                    UpdateState::Checking => {
+                        ui.spinner();
+                    }
+                    _ => {
+                        check = ui
+                            .add_sized([160.0, 32.0], egui::Button::new("Check for updates"))
+                            .clicked();
+                    }
+                }
+            });
+        });
+    });
+    if check {
+        app.settings.update.start(ui.ctx());
+    }
+    if let Some(url) = open {
+        open_url(app, &url);
+    }
 }
 
 fn about_page(app: &mut SidestageApp, ui: &mut Ui) {
@@ -1342,23 +1583,33 @@ fn about_page(app: &mut SidestageApp, ui: &mut Ui) {
         ui.horizontal(|ui| {
             let w = 3.0 * 150.0;
             ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
-            let open = |app: &mut SidestageApp, url: &str| {
-                if let Err(e) = sidestage_platform::launch::launch(&sidestage_core::LaunchTarget::Url { url: url.into() }) {
-                    app.toast(format!("Couldn't open the browser: {e}"), true);
-                }
-            };
             if ui.add_sized([140.0, 30.0], egui::Button::new("GitHub")).clicked() {
-                open(app, "https://github.com/danny19862025/sidestage");
+                open_url(app, "https://github.com/danny19862025/sidestage");
             }
             if ui.add_sized([140.0, 30.0], egui::Button::new("Report an issue")).clicked() {
-                open(app, "https://github.com/danny19862025/sidestage/issues");
+                open_url(app, "https://github.com/danny19862025/sidestage/issues");
             }
             if ui.add_sized([140.0, 30.0], egui::Button::new("Integration details")).clicked() {
                 app.settings.tab = Tab::Integration;
             }
         });
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.add_space(((ui.available_width() - 220.0) / 2.0).max(0.0));
+            if coffee_button(ui, 220.0).clicked() {
+                open_url(app, COFFEE_URL);
+            }
+        });
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Sidestage is free. If it helps you, a coffee keeps it going.")
+                .size(12.0)
+                .color(p.text_faint),
+        );
     });
     ui.add_space(18.0);
+    update_group(app, ui);
+    ui.add_space(12.0);
     group(ui, app, |ui| {
         egui::Grid::new("about-grid")
             .num_columns(2)
