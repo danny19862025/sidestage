@@ -169,7 +169,7 @@ Where something is compositor-specific, and why:
   shows. KWin's PipeWire window screencast (`zkde_screencast`) could make them
   live later.
 
-## Feature support by platform (0.2)
+## Feature support by platform (0.3)
 
 | Feature | Windows 11 | KDE Plasma Wayland | GNOME Wayland (+ extension) | X11 / EWMH |
 |---|---|---|---|---|
@@ -303,8 +303,8 @@ cargo build --release -p sidestage
 
 ```powershell
 cargo build --release -p sidestage
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=0.2.0 installer\Sidestage.iss
-# -> dist\Sidestage-Setup-0.2.0.exe
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 installer\Sidestage.iss
+# -> dist\Sidestage-Setup-0.3.0.exe
 ```
 
 (If Inno Setup was installed for all users, ISCC is in
@@ -317,7 +317,7 @@ so its reserved screen space is released. Uninstalling keeps your favourites in
 
 CI (`.github/workflows/build.yml`) builds the Windows installer, a portable
 `sidestage.exe` and a Linux tarball on every push. Pushing a version tag
-(`git tag v0.2.0 && git push origin v0.2.0`) publishes them as a GitHub release.
+(`git tag v0.3.0 && git push origin v0.3.0`) publishes them as a GitHub release.
 
 ### Command line
 

@@ -11,6 +11,20 @@ pub enum Glyph {
     More,
     Windows,
     Pin { on: bool },
+    /// Settings navigation: Favourites.
+    Star,
+    /// Settings navigation: Appearance (half-filled circle).
+    Contrast,
+    /// Settings navigation: Behaviour (two sliders).
+    Sliders,
+    /// Settings navigation: Integration (two linked rings).
+    Link,
+    /// Settings navigation: About.
+    Info,
+    /// Buy Me a Coffee.
+    Coffee,
+    /// Update available / download.
+    Download,
 }
 
 pub fn paint(p: &Painter, rect: Rect, glyph: Glyph, color: Color32) {
@@ -92,6 +106,71 @@ pub fn paint(p: &Painter, rect: Rect, glyph: Glyph, color: Color32) {
             p.rect_stroke(b, 2.0, stroke, egui::StrokeKind::Middle);
             p.rect_filled(a.expand(w * 0.5), 2.0, Color32::TRANSPARENT);
             p.rect_stroke(a, 2.0, stroke, egui::StrokeKind::Middle);
+        }
+        Glyph::Star => {
+            let (r_out, r_in) = (s * 0.38, s * 0.16);
+            let pts: Vec<Pos2> = (0..10)
+                .map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+                    let r = if i % 2 == 0 { r_out } else { r_in };
+                    c + vec2(a.cos(), a.sin()) * r + vec2(0.0, s * 0.03)
+                })
+                .collect();
+            p.add(Shape::closed_line(pts, stroke));
+        }
+        Glyph::Contrast => {
+            let r = s * 0.32;
+            p.circle_stroke(c, r, stroke);
+            // Left half filled.
+            let pts: Vec<Pos2> = (0..=16)
+                .map(|i| {
+                    let a = std::f32::consts::FRAC_PI_2 + i as f32 / 16.0 * std::f32::consts::PI;
+                    c + vec2(a.cos(), a.sin()) * r
+                })
+                .collect();
+            p.add(Shape::convex_polygon(pts, color, Stroke::NONE));
+        }
+        Glyph::Sliders => {
+            for (dy, knob) in [(-0.17, -0.12), (0.17, 0.14)] {
+                let y = c.y + s * dy;
+                p.line_segment([pos2(c.x - s * 0.34, y), pos2(c.x + s * 0.34, y)], stroke);
+                p.circle_filled(pos2(c.x + s * knob, y), s * 0.09, color);
+            }
+        }
+        Glyph::Link => {
+            let r = s * 0.17;
+            p.circle_stroke(c + vec2(-s * 0.12, s * 0.06), r, stroke);
+            p.circle_stroke(c + vec2(s * 0.12, -s * 0.06), r, stroke);
+        }
+        Glyph::Info => {
+            p.circle_stroke(c, s * 0.34, stroke);
+            p.circle_filled(c + vec2(0.0, -s * 0.15), w * 0.8, color);
+            p.line_segment([c + vec2(0.0, -s * 0.03), c + vec2(0.0, s * 0.18)], stroke);
+        }
+        Glyph::Coffee => {
+            // Cup, handle and two wisps of steam.
+            let cup = Rect::from_min_max(c + vec2(-s * 0.3, -s * 0.04), c + vec2(s * 0.14, s * 0.34));
+            p.rect_filled(cup, egui::CornerRadius { nw: 1, ne: 1, sw: 5, se: 5 }, color);
+            p.circle_stroke(c + vec2(s * 0.2, s * 0.13), s * 0.09, stroke);
+            for dx in [-0.16, 0.0] {
+                let x = c.x + s * dx;
+                p.add(Shape::line(
+                    vec![
+                        pos2(x, c.y - s * 0.12),
+                        pos2(x + s * 0.05, c.y - s * 0.22),
+                        pos2(x, c.y - s * 0.32),
+                    ],
+                    Stroke::new(w * 0.8, color),
+                ));
+            }
+        }
+        Glyph::Download => {
+            p.line_segment([c + vec2(0.0, -s * 0.32), c + vec2(0.0, s * 0.12)], stroke);
+            p.add(Shape::line(
+                vec![c + vec2(-s * 0.16, -s * 0.04), c + vec2(0.0, s * 0.12), c + vec2(s * 0.16, -s * 0.04)],
+                stroke,
+            ));
+            p.line_segment([c + vec2(-s * 0.3, s * 0.32), c + vec2(s * 0.3, s * 0.32)], stroke);
         }
     }
 }
