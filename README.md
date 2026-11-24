@@ -1,5 +1,7 @@
 # Sidestage
 
+🚀 **[Explore the Live Interactive Reveal Website](https://danny19862025.github.io/sidestage/)**
+
 A sidebar for **Windows 11** and **Linux** (GNOME and KDE Plasma first), inspired
 by macOS Stage Manager but organised your way:
 

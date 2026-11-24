@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sidestage — Modern Reveal Showcase</title>
+  <meta name="description" content="Interactive Reveal showcase for Sidestage — a fast, native edge sidebar for Windows 11 and Linux (KDE Plasma & GNOME) built in Rust." />
+  <link rel="icon" type="image/svg+xml" href="assets/sidestage.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Auto-slide top timer bar -->
+  <div class="autoslide-bar" aria-hidden="true">
+    <div class="autoslide-fill" id="autoSlideFill"></div>
+  </div>
+
+  <!-- Ambient background -->
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-grid"></div>
+  </div>
+
+  <!-- Minimal Floating Top Bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="brand-btn" id="brandHomeBtn" type="button" title="Go to first slide">
+        <img src="assets/sidestage.svg" alt="" width="28" height="28" class="brand-icon" />
+        <span class="brand-name">Sidestage</span>
+        <span class="version-pill">v0.3.0</span>
+      </button>
+    </div>
+
+    <div class="topbar-center">
+      <span class="slide-kicker-pill" id="topbarSlideLabel">01 / 08 · Overview</span>
+    </div>
+
+    <div class="topbar-right">
+      <button class="icon-btn" id="overviewToggleBtn" type="button" title="Slide Overview (O)" aria-label="Toggle slide overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+          <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+          <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+        </svg>
+      </button>
+      <button class="icon-btn" id="themeToggle" type="button" title="Toggle Dark/Light Theme" aria-label="Toggle theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
+      <button class="icon-btn" id="fullscreenBtn" type="button" title="Fullscreen (F)" aria-label="Toggle fullscreen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+      <a href="https://github.com/danny19862025/sidestage" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">
+        GitHub ↗
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Reveal Viewport -->
+  <main class="reveal-deck" id="revealDeck" aria-live="polite">
+    <!-- SLIDE 1: Hero Reveal -->
+    <section class="slide active" data-title="Overview" data-index="0">
+      <div class="slide-inner slide-hero">
+        <div class="hero-badge reveal-item" style="--d: 0ms">
+          <span class="pulse-dot"></span>
+          <span>Open Source · Built in Rust &amp; egui · Windows 11 &amp; Linux</span>
+        </div>
+
+        <h1 class="hero-title reveal-item" style="--d: 90ms">
+          Your desktop,<br />
+          <span class="gradient-text">staged your way.</span>
+        </h1>
+
+        <p class="hero-subtitle reveal-item" style="--d: 180ms">
+          An edge sidebar inspired by macOS Stage Manager — without hijacking your workflow.
+          Keep <strong>favourite apps</strong> in expandable sections at the top and <strong>minimized windows</strong> as one-click preview cards underneath.
+        </p>
+
+        <div class="hero-pill-row reveal-item" style="--d: 260ms">
+          <span>✓ Never hides open windows</span>
+          <span>✓ Live DWM &amp; Wayland snapshots</span>
+          <span>✓ Zero focus stealing</span>
+          <span>✓ MIT Licensed</span>
+        </div>
+
+        <div class="hero-cta reveal-item" style="--d: 340ms">
+          <a href="https://github.com/danny19862025/sidestage/releases/latest" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg">
+            Download v0.3.0
+          </a>
+          <button class="btn btn-secondary btn-lg" type="button" data-go-slide="1">
+            Try Live Demo →
+          </button>
+          <button class="btn btn-ghost btn-lg" type="button" data-go-slide="7">
+            Install Guide
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: Interactive Live Sidestage Simulator -->
+    <section class="slide" data-title="Live Demo" data-index="1">
+      <div class="slide-inner slide-wide">
+        <div class="slide-header compact reveal-item" style="--d: 0ms">
+          <div>
+            <span class="kicker">Interactive Preview</span>
+            <h2>Experience Sidestage right in your browser</h2>
+          </div>
+          <div class="demo-controls">
+            <button class="chip-btn active" id="demoDarkBtn" type="button">Dark</button>
+            <button class="chip-btn" id="demoLightBtn" type="button">Light</button>
+            <button class="chip-btn" id="demoEdgeBtn" type="button">Edge: Left</button>
+            <button class="chip-btn" id="demoAutohideBtn" type="button">Auto-hide: Off</button>
+          </div>
+        </div>
+
+        <div class="desktop-frame reveal-item" id="desktopFrame" style="--d: 110ms" data-edge="left" data-sidebar-theme="dark" data-autohide="false">
+          <div class="edge-hotspot" id="edgeHotspot" title="Hover edge to reveal Sidestage"></div>
+
+          <aside class="sim-sidebar" id="simSidebar" aria-label="Interactive Sidestage sidebar demo">
+            <div class="sim-header">
+              <div class="sim-brand">
+                <img src="assets/sidestage.svg" alt="" width="18" height="18" />
+                <span>Sidestage</span>
+              </div>
+              <div class="sim-header-icons">
+                <button class="sim-icon-btn" id="simSearchToggle" type="button" title="Search (Ctrl+Alt+Space)" aria-label="Toggle search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </button>
+                <button class="sim-icon-btn" id="simRestoreAllBtn" type="button" title="Restore all minimized" aria-label="Restore all minimized windows">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12h8M12 8v8"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="sim-search-wrap" id="simSearchWrap" hidden>
+              <input type="text" id="simSearchInput" class="sim-search-input" placeholder="Search apps &amp; windows…" autocomplete="off" />
+              <button class="sim-search-clear" id="simSearchClear" type="button" aria-label="Clear search">×</button>
+            </div>
+
+            <div class="sim-scroll">
+              <div id="simSections"></div>
+              <div class="sim-divider"></div>
+              <div class="sim-min-header">
+                <span class="sim-min-label">Minimized</span>
+                <span class="sim-count-pill" id="simMinCount">3</span>
+              </div>
+              <div class="sim-min-list" id="simMinList"></div>
+            </div>
+          </aside>
+
+          <div class="sim-desktop">
+            <div class="sim-window" id="simActiveWindow">
+              <div class="sim-win-titlebar">
+                <div class="sim-win-title">
+                  <span class="sim-win-dot" id="simActiveDot"></span>
+                  <span id="simActiveTitle">Design notes — Writer</span>
+                </div>
+                <div class="sim-win-controls">
+                  <button class="win-ctrl win-min" id="simMinimizeBtn" type="button" title="Minimize to Sidestage" aria-label="Minimize active window">−</button>
+                  <span class="win-ctrl" aria-hidden="true">□</span>
+                  <span class="win-ctrl" aria-hidden="true">×</span>
+                </div>
+              </div>
+              <div class="sim-win-body" id="simActiveBody">
+                <div class="sim-win-content">
+                  <span class="sim-win-tag" id="simActiveTag">Workspace</span>
+                  <h3 id="simActiveHeading">Design notes</h3>
+                  <p id="simActiveDesc">Maximized windows respect Sidestage's reserved edge space. Click − above to send this window to the Minimized tray, or click any card to restore it.</p>
+                  <button class="sim-action-pill" id="simMinimizeActionBtn" type="button">Minimize this window →</button>
+                </div>
+              </div>
+            </div>
+            <div class="sim-toast" id="simToast" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: Favourites & Unified Search -->
+    <section class="slide" data-title="Favourites & Search" data-index="2">
+      <div class="slide-inner">
+        <div class="slide-header reveal-item" style="--d: 0ms">
+          <span class="kicker">Favourites &amp; Search</span>
+          <h2>Organised sections, instant launch, one shortcut</h2>
+          <p>Favourites stay put whether the app is running or not — arranged cleanly in your own collapsible sections.</p>
+        </div>
+
+        <div class="cards-grid cards-3">
+          <article class="glass-card reveal-item" style="--d: 100ms">
+            <div class="card-icon gradient-bg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+            </div>
+            <h3>Expandable Sections</h3>
+            <p>Create, rename, reorder, collapse, and delete sections like <em>Games</em>, <em>Coding</em>, <em>Work</em>, and <em>Everyday</em>. Drag favourites to reorder or move between sections.</p>
+          </article>
+
+          <article class="glass-card reveal-item" style="--d: 190ms">
+            <div class="card-icon accent-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <h3>Apps, Folders &amp; Websites</h3>
+            <p>Add via the installed-apps picker (Start menu / <code>.desktop</code>) or drag shortcuts, <code>.exe</code>, <code>.lnk</code>, folders, and <code>.url</code> files straight onto the sidebar. Batch-open with <strong>Launch section</strong>.</p>
+          </article>
+
+          <article class="glass-card reveal-item" style="--d: 280ms">
+            <div class="card-icon accent-purple">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <h3>Global Search Shortcut</h3>
+            <p>Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> to search favourites and minimized windows together. Use <kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>Enter</kbd> to launch or restore, and <kbd>Esc</kbd> to hand focus right back.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: Minimized Windows & Behaviour -->
+    <section class="slide" data-title="Minimized & Behaviour" data-index="3">
+      <div class="slide-inner">
+        <div class="slide-header reveal-item" style="--d: 0ms">
+          <span class="kicker">Minimized Windows &amp; Behaviour</span>
+          <h2>One-click previews that stay out of your way</h2>
+          <p>Sidestage only lists windows you minimize yourself, and steps aside automatically when you go fullscreen.</p>
+        </div>
+
+        <div class="cards-grid cards-2">
+          <article class="glass-card reveal-item" style="--d: 100ms">
+            <div class="card-icon accent-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+            </div>
+            <h3>Live Previews &amp; Per-App Stacks</h3>
+            <p>Windows 11 renders <strong>live DWM thumbnails</strong> right inside the card. KDE Plasma and GNOME capture crisp minimize-time snapshots. Multiple minimized windows from the same app automatically stack — click to expand, or right-click for <em>Restore all windows</em>.</p>
+          </article>
+
+          <article class="glass-card reveal-item" style="--d: 180ms">
+            <div class="card-icon accent-teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3>Pause in Fullscreen &amp; Zero Focus Stealing</h3>
+            <p>When a fullscreen game or video covers the sidebar's monitor, Sidestage hides itself, its edge reveal, and its reserved space. During normal clicks, it never steals keyboard focus from your active app.</p>
+          </article>
+
+          <article class="glass-card reveal-item" style="--d: 260ms">
+            <div class="card-icon accent-amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+            </div>
+            <h3>Reserved Space or Auto-Hide</h3>
+            <p>Reserve screen space so maximized windows stop neatly at the sidebar — or turn on auto-hide so it slides away and reveals smoothly when you point at the left or right edge.</p>
+          </article>
+
+          <article class="glass-card reveal-item" style="--d: 340ms">
+            <div class="card-icon gradient-bg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+            </div>
+            <h3>Tailored Appearance &amp; Single JSON Config</h3>
+            <p>Adjustable width, icon size, preview height, monitor choice, HiDPI scaling, and light/dark/system themes — persisted atomically in a single <code>config.json</code>.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: Windows 11 Screenshots -->
+    <section class="slide" data-title="Windows 11" data-index="4">
+      <div class="slide-inner slide-wide">
+        <div class="slide-header compact reveal-item" style="--d: 0ms">
+          <div>
+            <span class="kicker">Windows 10 / 11 Showcase</span>
+            <h2>Native Win32 + Live DWM Thumbnails</h2>
+          </div>
+          <span class="hint-pill">Click any screenshot to zoom</span>
+        </div>
+
+        <div class="shot-row shot-row-win">
+          <figure class="shot-card reveal-item" style="--d: 90ms" data-lightbox-src="screenshots/windows-dark.png" data-lightbox-caption="Windows 11 — Dark theme with live DWM preview of a minimized window">
+            <div class="shot-media"><img src="screenshots/windows-dark.png" alt="Sidestage on Windows 11 dark theme" /></div>
+            <figcaption><strong>Dark Theme</strong><span>Live DWM preview card</span></figcaption>
+          </figure>
+
+          <figure class="shot-card reveal-item" style="--d: 170ms" data-lightbox-src="screenshots/windows-light.png" data-lightbox-caption="Windows 11 — Light theme matching system appearance">
+            <div class="shot-media"><img src="screenshots/windows-light.png" alt="Sidestage on Windows 11 light theme" /></div>
+            <figcaption><strong>Light Theme</strong><span>Matches system palette</span></figcaption>
+          </figure>
+
+          <figure class="shot-card shot-wide reveal-item" style="--d: 250ms" data-lightbox-src="screenshots/windows-settings.png" data-lightbox-caption="Windows 11 — Settings window for organising favourites, folders, and websites">
+            <div class="shot-media"><img src="screenshots/windows-settings.png" alt="Sidestage Settings on Windows 11" /></div>
+            <figcaption><strong>Settings · Favourites &amp; Sections</strong><span>Add apps, folders, websites, or files</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: Linux Screenshots (KDE Plasma & GNOME) -->
+    <section class="slide" data-title="Linux · KDE & GNOME" data-index="5">
+      <div class="slide-inner slide-wide">
+        <div class="slide-header compact reveal-item" style="--d: 0ms">
+          <div>
+            <span class="kicker">Linux Showcase</span>
+            <h2>KDE Plasma 6 Wayland &amp; GNOME Shell 51</h2>
+          </div>
+          <span class="hint-pill">Click any screenshot to zoom</span>
+        </div>
+
+        <div class="shot-row shot-row-4">
+          <figure class="shot-card reveal-item" style="--d: 80ms" data-lightbox-src="screenshots/kde-dark.png" data-lightbox-caption="KDE Plasma 6 Wayland — Dark theme with minimized windows stacked per app">
+            <div class="shot-media"><img src="screenshots/kde-dark.png" alt="Sidestage on KDE Plasma dark theme" /></div>
+            <figcaption><strong>KDE Plasma · Stacked</strong><span>Exclusive layer-shell zone</span></figcaption>
+          </figure>
+
+          <figure class="shot-card reveal-item" style="--d: 150ms" data-lightbox-src="screenshots/kde-expanded-stack.png" data-lightbox-caption="KDE Plasma 6 Wayland — Expanded minimized window stack">
+            <div class="shot-media"><img src="screenshots/kde-expanded-stack.png" alt="Sidestage expanded window stack on KDE" /></div>
+            <figcaption><strong>Expanded Stack</strong><span>Pick any window or restore all</span></figcaption>
+          </figure>
+
+          <figure class="shot-card reveal-item" style="--d: 220ms" data-lightbox-src="screenshots/kde-light-autohide.png" data-lightbox-caption="KDE Plasma 6 Wayland — Light theme revealed via auto-hide">
+            <div class="shot-media"><img src="screenshots/kde-light-autohide.png" alt="Sidestage KDE light theme auto-hide" /></div>
+            <figcaption><strong>Light · Auto-Hide</strong><span>Reveals cleanly on edge hover</span></figcaption>
+          </figure>
+
+          <figure class="shot-card reveal-item" style="--d: 290ms" data-lightbox-src="screenshots/gnome.png" data-lightbox-caption="GNOME Shell 51 Wayland — Integrated via the Sidestage Shell extension">
+            <div class="shot-media"><img src="screenshots/gnome.png" alt="Sidestage on GNOME Shell 51" /></div>
+            <figcaption><strong>GNOME Shell 51</strong><span>Extension + top-bar menu</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Native Integration & Rust Architecture -->
+    <section class="slide" data-title="Architecture" data-index="6">
+      <div class="slide-inner slide-wide">
+        <div class="slide-header compact reveal-item" style="--d: 0ms">
+          <div>
+            <span class="kicker">Under the Hood</span>
+            <h2>Three-crate Rust architecture · Verified per compositor</h2>
+          </div>
+        </div>
+
+        <div class="arch-split">
+          <div class="arch-crates reveal-item" style="--d: 100ms">
+            <div class="crate-card">
+              <span class="crate-badge">crates/sidestage</span>
+              <h4>egui / eframe App</h4>
+              <p>Borderless always-on-top sidebar, Settings UI, tray, single-instance guard &amp; auto-hide state machine.</p>
+            </div>
+            <div class="crate-card">
+              <span class="crate-badge">crates/sidestage-core</span>
+              <h4>Pure Core Logic (Zero OS Code)</h4>
+              <p>Atomic JSON config, section/favourite ops, <code>WindowTracker</code> grouping, unified search &amp; <code>.desktop</code> parser.</p>
+            </div>
+            <div class="crate-card">
+              <span class="crate-badge">crates/sidestage-platform</span>
+              <h4>Native OS &amp; Compositor Backends</h4>
+              <p>Unified <code>WindowEvent</code> API over Win32/DWM, KWin Wayland + ScreenShot2, GNOME D-Bus extension &amp; X11/EWMH.</p>
+            </div>
+          </div>
+
+          <div class="platform-mini-grid reveal-item" style="--d: 200ms">
+            <div class="mini-plat">
+              <strong>Windows 10 / 11</strong>
+              <span><code>SetWinEventHook</code> · Live DWM thumbnails · AppBar space reservation</span>
+            </div>
+            <div class="mini-plat">
+              <strong>KDE Plasma 6 (Wayland)</strong>
+              <span><code>plasma_window_management</code> · KWin ScreenShot2 · <code>wlr-layer-shell</code> · No extension</span>
+            </div>
+            <div class="mini-plat">
+              <strong>GNOME 47–51 (Wayland)</strong>
+              <span><code>sidestage@sidestage.app</code> D-Bus extension · <code>paint_to_content</code> · Strut chrome actor</span>
+            </div>
+            <div class="mini-plat">
+              <strong>X11 / EWMH</strong>
+              <span><code>_NET_CLIENT_LIST</code> · Icon + title cards · <code>_NET_WM_STRUT_PARTIAL</code></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: Download & Install -->
+    <section class="slide" data-title="Install" data-index="7">
+      <div class="slide-inner slide-wide">
+        <div class="slide-header compact reveal-item" style="--d: 0ms">
+          <div>
+            <span class="kicker">Get Sidestage v0.3.0</span>
+            <h2>Install in under a minute</h2>
+          </div>
+          <div class="os-tabs" role="tablist" aria-label="Operating system selection">
+            <button class="os-tab active" role="tab" aria-selected="true" data-os="windows" type="button">Windows 10 / 11</button>
+            <button class="os-tab" role="tab" aria-selected="false" data-os="linux" type="button">Linux (KDE &amp; GNOME)</button>
+          </div>
+        </div>
+
+        <div class="install-box reveal-item" style="--d: 110ms">
+          <!-- Windows -->
+          <div class="os-panel active" data-os-panel="windows">
+            <div class="dl-grid">
+              <div class="dl-card featured">
+                <span class="dl-meta">Recommended · No admin prompt</span>
+                <h3>Windows Installer</h3>
+                <p>User-level install, Start menu shortcuts, optional launch at sign-in.</p>
+                <code>Sidestage-Setup-0.3.0.exe</code>
+                <a href="https://github.com/danny19862025/sidestage/releases/latest" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">Download Installer ↗</a>
+              </div>
+              <div class="dl-card">
+                <span class="dl-meta">Zero installation · Single binary</span>
+                <h3>Windows Portable</h3>
+                <p>Drop anywhere and run — ideal for quick trials or portable setups.</p>
+                <code>sidestage-windows-x64-portable.exe</code>
+                <a href="https://github.com/danny19862025/sidestage/releases/latest" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Download Portable ↗</a>
+              </div>
+            </div>
+            <p class="install-note">
+              <strong>SmartScreen:</strong> Installer is unsigned — click <em>More info → Run anyway</em>. Silent install: <code>Sidestage-Setup-0.3.0.exe /VERYSILENT</code>.
+            </p>
+          </div>
+
+          <!-- Linux -->
+          <div class="os-panel" data-os-panel="linux">
+            <div class="distro-pills" role="tablist" aria-label="Linux distribution">
+              <button class="distro-pill active" data-distro="arch" type="button">Arch Linux</button>
+              <button class="distro-pill" data-distro="debian" type="button">Debian / Ubuntu</button>
+              <button class="distro-pill" data-distro="fedora" type="button">Fedora</button>
+              <button class="distro-pill" data-distro="opensuse" type="button">openSUSE</button>
+              <button class="distro-pill" data-distro="gentoo" type="button">Gentoo</button>
+              <button class="distro-pill" data-distro="void" type="button">Void Linux</button>
+            </div>
+
+            <div class="code-step">
+              <div class="code-head">
+                <span id="distroCmdLabel">1. Arch Linux dependencies (Rust 1.88+)</span>
+                <button class="copy-btn" data-copy-target="distroCode" type="button">Copy</button>
+              </div>
+              <pre><code id="distroCode">sudo pacman -S --needed base-devel git rustup libxkbcommon mesa wayland libx11
+rustup default stable</code></pre>
+            </div>
+
+            <div class="code-step">
+              <div class="code-head">
+                <span>2. Clone, build &amp; install for your user (no root)</span>
+                <button class="copy-btn" data-copy-target="linuxInstallCode" type="button">Copy</button>
+              </div>
+              <pre><code id="linuxInstallCode">git clone https://github.com/danny19862025/sidestage && cd sidestage && scripts/install-linux.sh</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Floating Reveal Bottom Dock HUD -->
+  <nav class="deck-hud" aria-label="Slide deck controls">
+    <button class="hud-btn" id="prevSlideBtn" type="button" title="Previous slide (←)" aria-label="Previous slide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+
+    <button class="hud-play-btn playing" id="autoSlideToggle" type="button" title="Toggle Auto-Slide (Space)" aria-label="Pause auto-slide">
+      <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg>
+      <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><polygon points="7 5 19 12 7 19 7 5"></polygon></svg>
+      <span id="autoSlideStatus">Auto</span>
+    </button>
+
+    <button class="hud-speed-btn" id="speedBtn" type="button" title="Change auto-slide interval">7s</button>
+
+    <div class="hud-dots" id="hudDots" role="tablist" aria-label="Jump to slide"></div>
+
+    <button class="hud-btn" id="nextSlideBtn" type="button" title="Next slide (→)" aria-label="Next slide">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>
+  </nav>
+
+  <!-- Slide Overview Grid Modal -->
+  <div class="overview-modal" id="overviewModal" hidden role="dialog" aria-modal="true" aria-label="Slide overview">
+    <div class="overview-head">
+      <h3>Slide Overview <span class="overview-hint">Press Esc or O to close</span></h3>
+      <button class="icon-btn" id="overviewCloseBtn" type="button" aria-label="Close overview">×</button>
+    </div>
+    <div class="overview-grid" id="overviewGrid"></div>
+  </div>
+
+  <!-- Screenshot Lightbox Modal -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Screenshot preview" hidden>
+    <div class="lightbox-backdrop" id="lightboxBackdrop"></div>
+    <div class="lightbox-content">
+      <button class="lightbox-close" id="lightboxClose" type="button" aria-label="Close preview">×</button>
+      <img id="lightboxImg" src="" alt="" />
+      <p id="lightboxCaption"></p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
