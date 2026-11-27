@@ -584,9 +584,8 @@ impl Panel {
         }
     }
 
-    /// Window shaping is a Windows feature; Linux narrows the input shape
-    /// only while auto-hidden.
-    pub fn set_shape(&mut self, _rects: Option<Vec<[i32; 4]>>) {}
+    /// Window shaping is only needed on Windows.
+    pub fn set_shape(&mut self, _rects: Vec<[i32; 4]>) {}
 
     /// Linux uses the toolkit's (XDND) file-drop events.
     pub fn poll_drag(&mut self) -> Option<crate::panel::NativeDrag> {

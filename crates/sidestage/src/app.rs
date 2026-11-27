@@ -706,6 +706,10 @@ impl SidestageApp {
         if self.autohide.shown {
             // Leave events can arrive while egui is idle; keep checking.
             ctx.request_repaint_after(Duration::from_millis(200));
+        } else if cfg!(windows) {
+            // Hidden off screen on Windows: the pointer reaching the edge is
+            // polled (see `Panel::pointer_inside`).
+            ctx.request_repaint_after(Duration::from_millis(60));
         }
         if hovering || busy {
             self.autohide.leave_since = None;
@@ -787,13 +791,28 @@ impl SidestageApp {
             Edge::Left => mon.x,
             Edge::Right => mon.x + mon.width - w,
         };
-        // Reserve only the body; the arch's swell floats over windows.
         let paused = self.update_paused(&mon);
         let s = &self.config.settings;
+        // Reserve the whole window, swell included: its transparent corners
+        // would otherwise sit over maximized windows and swallow their
+        // clicks (e.g. a title bar's close button next to the sidebar).
         let reserve = if paused || s.auto_hide || !s.reserve_space {
             0
         } else {
-            ((s.width + 4.0) * self.scale).round() as i32
+            full_w
+        };
+        // Windows slides the whole (shaped) window rather than drawing the
+        // panel at an offset: it shows transparent pixels as black. Same
+        // easing as the sidebar's own slide on Linux.
+        let slide = if cfg!(windows) && s.auto_hide && !paused {
+            let glide = if self.wants_shown() {
+                1.0 - (1.0 - reveal).powi(3)
+            } else {
+                reveal.powi(3)
+            };
+            ((1.0 - glide) * full_w as f32).round() as i32
+        } else {
+            0
         };
         let geometry = PanelGeometry {
             monitor: mon,
@@ -805,6 +824,7 @@ impl SidestageApp {
             reserve,
             collapsed_strip,
             auto_hide: s.auto_hide && !paused,
+            slide,
             paused,
         };
         if let Some(p) = self.panel.as_mut() {

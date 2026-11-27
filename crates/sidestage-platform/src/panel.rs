@@ -42,6 +42,13 @@ pub struct PanelGeometry {
     pub collapsed_strip: Option<i32>,
     /// Auto-hide is enabled (the platform may need to watch the pointer).
     pub auto_hide: bool,
+    /// Windows: how far (physical px) the whole window is moved past the
+    /// screen edge for the slide animation; 0 = fully shown, the window
+    /// width = fully hidden. Windows can't show the GL surface's transparent
+    /// pixels (they come out black), so instead of drawing the panel at an
+    /// offset inside a fixed window, the shaped window itself slides.
+    /// Linux ignores it.
+    pub slide: i32,
     /// A fullscreen app covers this monitor: no drawing, input, reserved
     /// space or edge reveal until it ends.
     pub paused: bool,
@@ -115,11 +122,11 @@ impl Panel {
         self.0.set_blur_region(rects)
     }
 
-    /// Clip the window (drawing and pointer input) to these rectangles
-    /// (physical px, `[x, y, w, h]`), or `None` for the whole window, so the
-    /// transparent area around the drawn shape lets clicks through.
-    /// Windows only; elsewhere a no-op.
-    pub fn set_shape(&mut self, rects: Option<Vec<[i32; 4]>>) {
+    /// Windows: trims the window to these rectangles (physical px,
+    /// `[x, y, w, h]`, window-relative) so no transparent pixel is ever
+    /// shown (they would come out black). Set once for the panel's resting
+    /// shape; repeated identical calls are free. Linux: no-op.
+    pub fn set_shape(&mut self, rects: Vec<[i32; 4]>) {
         self.0.set_shape(rects)
     }
 

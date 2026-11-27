@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result};
 use raw_window_handle::RawWindowHandle;
 use sidestage_core::WindowId;
 use windows::core::{BOOL, HSTRING};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmQueryThumbnailSourceSize, DwmRegisterThumbnail, DwmSetWindowAttribute,
     DwmUnregisterThumbnail, DwmUpdateThumbnailProperties, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
@@ -26,7 +26,8 @@ use windows::Win32::UI::Shell::{
     ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, ABN_POSCHANGED, APPBARDATA,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, GetWindowPlacement, IsIconic, PostMessageW, RegisterWindowMessageW,
+    GetCursorPos, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect, IsIconic, PostMessageW,
+    RegisterWindowMessageW,
     SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_BROADCAST,
     HWND_TOPMOST, MA_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE,
     GWL_STYLE, HTCLIENT, STYLESTRUCT, SW_SHOWNOACTIVATE, WINDOWPLACEMENT, WM_MOUSEACTIVATE,
@@ -122,10 +123,8 @@ unsafe extern "system" fn subclass_proc(
         return LRESULT(MA_NOACTIVATE as isize);
     }
     if msg == WM_NCHITTEST {
-        // The undecorated window keeps WS_THICKFRAME, so its outer pixels
-        // hit-test as resize borders. The sidebar never resizes, and the
-        // auto-hide strip is only a few pixels wide: treat it all as client
-        // so the pointer at the very screen edge reveals the sidebar.
+        // The sidebar never resizes and has no frame: all of it is client,
+        // so its edge pixels never hit-test as resize borders.
         return LRESULT(HTCLIENT as isize);
     }
     if msg == APPBAR_CALLBACK && wparam.0 as u32 == ABN_POSCHANGED {
@@ -191,9 +190,13 @@ pub struct Panel {
     hwnd: HWND,
     last: Option<PanelGeometry>,
     appbar: bool,
+    /// Hidden for a fullscreen app.
     hidden: bool,
-    /// Last window region sent (`None` = never set).
-    shape: Option<Option<Vec<[i32; 4]>>>,
+    /// Auto-hidden with `SW_HIDE` because another monitor sits beyond the
+    /// sidebar's edge (sliding off screen would put it on that monitor).
+    collapsed_hidden: bool,
+    /// Current window region (window-relative rectangles).
+    shape: Vec<[i32; 4]>,
     thumbs: DwmThumbs,
 }
 
@@ -245,7 +248,8 @@ impl Panel {
             last: None,
             appbar: false,
             hidden: false,
-            shape: None,
+            collapsed_hidden: false,
+            shape: Vec::new(),
             thumbs: DwmThumbs {
                 dest: hwnd,
                 map: HashMap::new(),
@@ -314,9 +318,39 @@ impl Panel {
                 let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
             }
         }
-        // Auto-hidden: the window keeps its size and the sidebar clips it to
-        // the edge strip with `set_shape`. Resizing a GL window between the
-        // strip and full width flashes a stale frame on every reveal.
+        // Windows shows the GL surface's transparent pixels as black, so the
+        // window is shaped to the panel (`set_shape`) and never shows any.
+        // Auto-hide therefore slides the whole shaped window past the screen
+        // edge (fully off screen when hidden; the pointer at the edge is
+        // detected by `pointer_inside`). If another monitor sits beyond that
+        // edge, the window would slide onto it: there it just hides and
+        // shows instead.
+        if g.slide > 0 {
+            let m = &g.monitor;
+            let (lo, hi) = if g.edge == Edge::Right {
+                (m.x + m.width, m.x + m.width + w)
+            } else {
+                (m.x - w, m.x)
+            };
+            let spills = monitors().iter().any(|o| {
+                o.x < hi && o.x + o.width > lo && o.y < y + h && o.y + o.height > y
+            });
+            if spills {
+                let hide = g.collapsed_strip.is_some();
+                if hide != self.collapsed_hidden {
+                    unsafe {
+                        let _ = ShowWindow(self.hwnd, if hide { SW_HIDE } else { SW_SHOWNOACTIVATE });
+                    }
+                    self.collapsed_hidden = hide;
+                }
+            } else {
+                x += if g.edge == Edge::Right { g.slide } else { -g.slide };
+            }
+        } else if std::mem::take(&mut self.collapsed_hidden) {
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+            }
+        }
         unsafe {
             if g.reserve > 0 {
                 let mut abd = self.appbar_data();
@@ -349,9 +383,8 @@ impl Panel {
                     abd.rc.left = abd.rc.right - g.reserve;
                 }
                 SHAppBarMessage(ABM_SETPOS, &mut abd);
-                // The AppBar reserves only the body; the window keeps its
-                // full width so the arch's swell can float over other
-                // windows. Follow the shell's position, not its width.
+                // Follow the shell's position (it may place us next to
+                // another appbar); the window keeps its own width.
                 x = if g.edge == Edge::Left {
                     abd.rc.left
                 } else {
@@ -364,6 +397,28 @@ impl Panel {
             }
             let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), x, y, w, h, SWP_NOACTIVATE);
         }
+    }
+
+    /// Trims the window to the panel's shape. The shape is the panel at
+    /// rest (the window itself slides), so this changes only when the
+    /// size, edge or monitor does, never per animation frame.
+    pub fn set_shape(&mut self, rects: Vec<[i32; 4]>) {
+        if rects.is_empty() || rects == self.shape {
+            return;
+        }
+        unsafe {
+            let rgn = CreateRectRgn(0, 0, 0, 0);
+            for r in &rects {
+                let part = CreateRectRgn(r[0], r[1], r[0] + r[2], r[1] + r[3]);
+                CombineRgn(Some(rgn), Some(rgn), Some(part), RGN_OR);
+                let _ = DeleteObject(part.into());
+            }
+            // On success the system owns the region.
+            if SetWindowRgn(self.hwnd, Some(rgn), true) == 0 {
+                let _ = DeleteObject(rgn.into());
+            }
+        }
+        self.shape = rects;
     }
 
     pub fn set_keyboard_focus(&mut self, wanted: bool) {
@@ -392,40 +447,44 @@ impl Panel {
         super::drop::set_waker(waker);
     }
 
-    /// Clips the window to the arch with a window region, so the
-    /// transparent corners around it pass clicks to the windows below.
-    pub fn set_shape(&mut self, rects: Option<Vec<[i32; 4]>>) {
-        if self.shape.as_ref() == Some(&rects) {
-            return;
-        }
-        unsafe {
-            match &rects {
-                Some(v) if !v.is_empty() => {
-                    let rgn = CreateRectRgn(0, 0, 0, 0);
-                    for r in v {
-                        let part = CreateRectRgn(r[0], r[1], r[0] + r[2], r[1] + r[3]);
-                        CombineRgn(Some(rgn), Some(rgn), Some(part), RGN_OR);
-                        let _ = DeleteObject(part.into());
-                    }
-                    // On success the system owns the region.
-                    if SetWindowRgn(self.hwnd, Some(rgn), true) == 0 {
-                        let _ = DeleteObject(rgn.into());
-                    }
-                }
-                _ => {
-                    SetWindowRgn(self.hwnd, None, true);
-                }
-            }
-        }
-        self.shape = Some(rects);
-    }
-
     /// Foreground activation already gives keyboard focus on Windows.
     pub fn claim_keyboard(&mut self) {}
 
-    /// Win32 delivers WM_MOUSELEAVE reliably through winit; no override.
+    /// With auto-hide, the hidden panel is off screen, so the pointer is
+    /// polled: "inside" means at the screen edge (on the sidebar's monitor)
+    /// or over the visible, shaped panel.
     pub fn pointer_inside(&mut self) -> Option<bool> {
-        None
+        let g = self.last.as_ref()?;
+        if !g.auto_hide || g.paused {
+            return None;
+        }
+        let mut p = POINT::default();
+        let mut r = RECT::default();
+        unsafe {
+            GetCursorPos(&mut p).ok()?;
+            GetWindowRect(self.hwnd, &mut r).ok()?;
+        }
+        let m = &g.monitor;
+        let strip = (6.0 * m.scale.max(1.0)).round() as i32;
+        let in_monitor_y = p.y >= m.y && p.y < m.y + m.height;
+        let at_edge = in_monitor_y
+            && match g.edge {
+                Edge::Right => p.x >= m.x + m.width - strip && p.x < m.x + m.width,
+                Edge::Left => p.x >= m.x && p.x < m.x + strip,
+            };
+        let visible = !self.hidden && !self.collapsed_hidden && g.collapsed_strip.is_none();
+        let (wx, wy) = (p.x - r.left, p.y - r.top);
+        let over = visible
+            && p.x >= r.left
+            && p.x < r.right
+            && p.y >= r.top
+            && p.y < r.bottom
+            && (self.shape.is_empty()
+                || self
+                    .shape
+                    .iter()
+                    .any(|s| wx >= s[0] && wx < s[0] + s[2] && wy >= s[1] && wy < s[1] + s[3]));
+        Some(at_edge || over)
     }
 
     pub fn live_thumbnails(&mut self) -> Option<&mut dyn LiveThumbnails> {

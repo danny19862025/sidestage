@@ -71,11 +71,6 @@ struct Frame<'a> {
     opening: bool,
 }
 
-/// Physical pixel rows at the top of the window left out of its Windows
-/// shape. DWM paints a 1px light line along the top of the transparent
-/// window, which showed as a ghost line while the sidebar slid in and out.
-const SKIP_TOP: i32 = 1;
-
 fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(3)
 }
@@ -114,7 +109,6 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         // Fullscreen app on this monitor: draw nothing at all.
         if let Some(p) = app.panel.as_mut() {
             p.set_blur_region(None);
-            p.set_shape(None);
             if let Some(lt) = p.live_thumbnails() {
                 lt.begin();
                 lt.end();
@@ -125,18 +119,11 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     if settings.auto_hide && reveal < 0.002 {
         // Collapsed: nothing is drawn (any hint read as a stray line down
         // the screen edge), but an invisible strip at the edge still takes
-        // the pointer and reveals the sidebar.
-        // Windows keeps the full-size window and clips it to the strip
-        // (resizing it on every reveal flashes); Linux ignores the shape.
-        let ppp = ui.ctx().pixels_per_point();
-        let strip = (HIDDEN_STRIP * ppp).round().max(2.0) as i32;
-        let width_px = (full.width() * ppp).round() as i32;
-        let height_px = (full.height() * ppp).round() as i32;
-        let sx = if left { 0 } else { width_px - strip };
+        // the pointer and reveals the sidebar. On Windows the window itself
+        // is only the strip; on Linux only its input shape is.
+        let _ = HIDDEN_STRIP;
         if let Some(p) = app.panel.as_mut() {
             p.set_blur_region(None);
-            // Skip the top pixel row (see `SKIP_TOP`).
-            p.set_shape(Some(vec![[sx, SKIP_TOP, strip, height_px - SKIP_TOP]]));
         }
         if let Some(lt) = app.panel.as_mut().and_then(|p| p.live_thumbnails()) {
             lt.begin();
@@ -162,6 +149,10 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
         reveal
     };
     let slide = (1.0 - glide) * (settings.width + OUTER_MARGIN) * if left { -1.0 } else { 1.0 };
+    // Windows shows transparent pixels as black, so there the window is
+    // shaped to the arch at rest and the whole window slides (app.rs); the
+    // arch is drawn without its own offset or springy swell.
+    let (slide, swell) = if cfg!(windows) { (0.0, 1.0) } else { (slide, swell) };
     let painter = ui.painter().clone();
     let arch = Arch::new(full, left, slide, swell);
     arch.paint(&painter, &palette);
@@ -170,33 +161,22 @@ pub fn show(app: &mut SidestageApp, ui: &mut Ui) {
     // the frost never lags behind or pops in after the animation.
     let ppp = ui.ctx().pixels_per_point();
     let bands = arch.blur_bands(full, ppp);
-    // Clip the window to the arch (plus its rim and shadow) so the
-    // transparent corners pass clicks through. While a menu is open it may
-    // reach past the arch, so the whole window stays live. While sliding,
-    // use one fixed full-window shape: a region change per frame lands out
-    // of step with the GL frame and flashes.
-    let settled = reveal >= 0.999;
-    let width_px = (full.width() * ppp).round() as i32;
-    let height_px = (full.height() * ppp).round() as i32;
-    let shape = if settled && !app.menu_open {
-        let grow = (4.0 * ppp).ceil() as i32;
-        bands
-            .iter()
-            .map(|&[x, y, w, h]| {
-                let w2 = (w + grow).min(width_px);
-                let x2 = if left { x } else { width_px - w2 };
-                let y2 = y.max(SKIP_TOP);
-                [x2, y2, w2, h - (y2 - y)]
-            })
-            .collect::<Vec<_>>()
-    } else {
-        vec![[0, SKIP_TOP, width_px, height_px - SKIP_TOP]]
-    };
-    let shape = Some(shape);
-    let blur = (reveal > 0.01).then_some(bands);
     if let Some(p) = app.panel.as_mut() {
-        p.set_blur_region(blur);
-        p.set_shape(shape);
+        if cfg!(windows) {
+            // Drop the first and last pixel row: the arch only partly covers
+            // them (anti-aliasing) and the rest would show as a black line.
+            let mut shape = bands.clone();
+            if let Some(first) = shape.first_mut() {
+                first[1] += 1;
+                first[3] -= 1;
+            }
+            if let Some(last) = shape.last_mut() {
+                last[3] -= 1;
+            }
+            shape.retain(|r| r[3] > 0);
+            p.set_shape(shape);
+        }
+        p.set_blur_region((reveal > 0.01).then_some(bands));
     }
 
     let mut f = Frame {
@@ -1360,7 +1340,13 @@ fn minimized_area(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
         lt.begin();
     }
     let ppp = ui.ctx().pixels_per_point();
-    let hide_live = app.menu_open || egui::DragAndDrop::has_any_payload(ui.ctx());
+    // Live previews are composited by DWM, outside our frame: they can't fade
+    // with the cards and trail the panel while it slides, leaving a ghost.
+    // Show them only once the panel has settled.
+    let hide_live = app.menu_open
+        || egui::DragAndDrop::has_any_payload(ui.ctx())
+        || f.reveal < 0.999
+        || stagger(f, 1.0) < 0.999;
 
     if app.groups.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 84.0), Sense::hover());

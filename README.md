@@ -305,8 +305,8 @@ cargo build --release -p sidestage
 
 ```powershell
 cargo build --release -p sidestage
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.0 installer\Sidestage.iss
-# -> dist\Sidestage-Setup-0.3.0.exe
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" /DAppVersion=0.3.1 installer\Sidestage.iss
+# -> dist\Sidestage-Setup-0.3.1.exe
 ```
 
 (If Inno Setup was installed for all users, ISCC is in
@@ -319,7 +319,7 @@ so its reserved screen space is released. Uninstalling keeps your favourites in
 
 CI (`.github/workflows/build.yml`) builds the Windows installer, a portable
 `sidestage.exe` and a Linux tarball on every push. Pushing a version tag
-(`git tag v0.3.0 && git push origin v0.3.0`) publishes them as a GitHub release.
+(`git tag v0.3.1 && git push origin v0.3.1`) publishes them as a GitHub release.
 
 ### Command line
 
