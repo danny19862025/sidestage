@@ -1360,7 +1360,13 @@ fn minimized_area(app: &mut SidestageApp, ui: &mut Ui, f: &mut Frame) {
         lt.begin();
     }
     let ppp = ui.ctx().pixels_per_point();
-    let hide_live = app.menu_open || egui::DragAndDrop::has_any_payload(ui.ctx());
+    // Live previews are composited by DWM, outside our frame: they can't fade
+    // with the cards and trail the panel while it slides, leaving a ghost.
+    // Show them only once the panel has settled.
+    let hide_live = app.menu_open
+        || egui::DragAndDrop::has_any_payload(ui.ctx())
+        || f.reveal < 0.999
+        || stagger(f, 1.0) < 0.999;
 
     if app.groups.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 84.0), Sense::hover());
